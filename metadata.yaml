@@ -1,9 +1,9 @@
-name: bili_all # 插件唯一识别名，以 astrbot_plugin_ 前缀开头
+name: astrbot_plugin_bili_all_function # 插件唯一识别名，以 astrbot_plugin_ 前缀开头
 display_name: bili_all # 用于展示的名字，可以是方便人类阅读的名字（需要版本 >= v4.5.0，低版本不会报错，请放心填写）
-desc: 有关b站的所有功能集合(做着玩玩)。 # 插件简短描述
-version: v0.0.1 # 插件版本号。格式：v1.1.1 或者 v1.1
+desc: B站链接解析 + UP主动态订阅。 # 插件简短描述
+version: v0.2.0 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: existyay # 作者
 repo: https://github.com/existyay/astrbot_plugin_bili_all_function # 插件的仓库地址
 support_platforms:
-  -qq_official
+  - qq_official
 astrbot_version: ">=4.18"

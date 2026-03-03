@@ -1,0 +1,124 @@
+{
+  "features": {
+    "description": "功能开关",
+    "type": "object",
+    "items": {
+      "enable_bili_parse": {
+        "description": "启用B站链接解析",
+        "type": "bool",
+        "hint": "解析普通文本中的 BV/av/b23/video 链接。",
+        "default": true
+      },
+      "enable_parse_miniapp": {
+        "description": "启用QQ小程序卡片解析",
+        "type": "bool",
+        "hint": "解析 QQ 转发的 Bilibili 小程序 JSON 卡片并提取视频链接。",
+        "default": true
+      }
+    }
+  },
+  "subscription": {
+    "description": "订阅轮询设置",
+    "type": "object",
+    "items": {
+      "poll_interval_seconds": {
+        "description": "轮询周期(秒)",
+        "type": "int",
+        "hint": "每个 UID 的动态/直播检测周期。",
+        "default": 300,
+        "min": 10,
+        "max": 86400
+      },
+      "timeout_seconds": {
+        "description": "请求超时(秒)",
+        "type": "int",
+        "hint": "访问 B站接口的网络超时。",
+        "default": 15,
+        "min": 3,
+        "max": 120
+      },
+      "dynamic_limit": {
+        "description": "单轮最多推送动态数",
+        "type": "int",
+        "hint": "每个订阅目标每轮最多推送多少条未读动态。",
+        "default": 3,
+        "min": 1,
+        "max": 20
+      },
+      "uid_task_gap_seconds": {
+        "description": "UID任务间隔(秒)",
+        "type": "int",
+        "hint": "相邻 UID 拉取任务的最小间隔，防止请求突发。",
+        "default": 1,
+        "min": 0,
+        "max": 30
+      },
+      "recent_ids_limit": {
+        "description": "历史去重缓存长度",
+        "type": "int",
+        "hint": "用于动态去重的 recent_ids 最大长度。",
+        "default": 20,
+        "min": 5,
+        "max": 200
+      }
+    }
+  },
+  "video_download": {
+    "description": "视频下载与发送",
+    "type": "object",
+    "items": {
+      "enable": {
+        "description": "启用视频下载后发送",
+        "type": "bool",
+        "hint": "解析到B站视频时下载到本地暂存，再发送到QQ。",
+        "default": false
+      },
+      "quality": {
+        "description": "目标画质",
+        "type": "string",
+        "hint": "会按该画质向下自动降级尝试。可填：360P/480P/720P/1080P/1080P+/1080P60/4K",
+        "default": "720P"
+      },
+      "max_duration_seconds": {
+        "description": "最大允许时长(秒)",
+        "type": "int",
+        "hint": "超出该时长的视频不会下载。",
+        "default": 600,
+        "min": 10,
+        "max": 14400
+      },
+      "max_size_mb": {
+        "description": "最大允许大小(MB)",
+        "type": "int",
+        "hint": "下载过程中会严格限制文件大小。",
+        "default": 100,
+        "min": 5,
+        "max": 2048
+      },
+      "auto_delete": {
+        "description": "发送后删除本地暂存",
+        "type": "bool",
+        "hint": "开启后发送完成会自动删除缓存视频文件。",
+        "default": true
+      },
+      "bili_cookie": {
+        "description": "B站Cookie(高画质可选)",
+        "type": "text",
+        "hint": "可填写浏览器中B站登录态Cookie（建议至少包含SESSDATA）以解锁更高画质下载。",
+        "default": ""
+      }
+    }
+  },
+  "permission": {
+    "description": "权限设置",
+    "type": "object",
+    "items": {
+      "admin_ids": {
+        "description": "管理员ID列表",
+        "type": "text",
+        "hint": "用于全局订阅管理指令。支持逗号、空格或换行分隔。示例: 123456,789012",
+        "default": ""
+      }
+    }
+  }
+}
