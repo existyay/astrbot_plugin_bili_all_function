@@ -3,9 +3,9 @@
 一个聚焦 B 站的 AstrBot 插件，当前包含：
 
 - 自动解析 B 站链接 / `BV` / `av` 号并返回视频关键信息
-- 自动解析 QQ 转发的 Bilibili 小程序卡片（JSON）并提取视频链接
-- 解析结果以富消息发送（封面图 + 结构化统计 + 直链）
+- 单一入口统一解析普通消息与 QQ 小程序 JSON 卡片中的 B 站视频链接
 - 可选自动下载视频到本地暂存并直接发送到 QQ（支持画质、时长、大小限制）
+- 命中解析后会停止事件传播（`event.stop_event()`），避免继续调用 AstrBot 模型提供商产生额外费用
 - 订阅 UP 主动态并后台轮询推送
 - 直播开播 / 下播状态推送
 
@@ -42,6 +42,7 @@
 - 每次最多推送 `3` 条新动态，可通过配置 `dynamic_limit` 调整
 - 管理员指令依赖配置项 `admin_ids`（数组，元素为发送者ID）
 - 视频下载暂存目录为 `data/cache/videos`，可配置发送后自动删除
+- 动态订阅默认走新版接口；遇到 `HTTP 412` 等风控失败时会自动回退旧动态接口兜底
 
 ## 配置页面
 
@@ -50,8 +51,10 @@
 可在 AstrBot 插件管理页面直接配置：
 
 - `features.enable_bili_parse`：是否启用普通 B 站链接解析
-- `features.enable_parse_miniapp`：是否启用 QQ 小程序卡片解析
+- `features.enable_bili_parse`：是否启用统一入口解析（文本 + QQ 小程序 JSON）
 - `subscription.*`：轮询周期、超时、推送上限、任务间隔、去重缓存长度
+- `subscription.http_retry_count`：网络请求失败时的重试次数
+- `subscription.http_retry_delay_seconds`：网络请求重试基础间隔
 - `video_download.enable`：是否启用“下载后发送视频文件”
 - `video_download.quality`：视频目标画质（自动向下兼容）
 - `video_download.max_duration_seconds`：可暂存视频的最大时长
@@ -67,6 +70,14 @@
 - [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
 - [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
 - [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+
+## 代码结构
+
+- `main.py`：插件入口、指令与事件处理
+- `bili_constants.py`：B站正则、过滤类型、画质映射常量
+- `bili_models.py`：数据模型（`Subscription`）
+- `bili_helpers.py`：纯工具函数（链接提取、格式化、动态文本解析、过滤参数解析）
+- `bili_logic.py`：业务逻辑函数（视频/动态消息构建、动态过滤、订阅映射与去重维护）
 
 ## 致谢
 

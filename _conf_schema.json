@@ -6,13 +6,7 @@
       "enable_bili_parse": {
         "description": "启用B站链接解析",
         "type": "bool",
-        "hint": "解析普通文本中的 BV/av/b23/video 链接。",
-        "default": true
-      },
-      "enable_parse_miniapp": {
-        "description": "启用QQ小程序卡片解析",
-        "type": "bool",
-        "hint": "解析 QQ 转发的 Bilibili 小程序 JSON 卡片并提取视频链接。",
+        "hint": "统一解析普通文本与QQ小程序JSON中的 BV/av/b23/video 链接。",
         "default": true
       }
     }
@@ -36,6 +30,22 @@
         "default": 15,
         "min": 3,
         "max": 120
+      },
+      "http_retry_count": {
+        "description": "请求重试次数",
+        "type": "int",
+        "hint": "网络请求失败时的轻量重试次数（不含首次请求）。",
+        "default": 2,
+        "min": 0,
+        "max": 6
+      },
+      "http_retry_delay_seconds": {
+        "description": "重试基础间隔(秒)",
+        "type": "float",
+        "hint": "每次重试前等待时间，实际等待为 基础间隔 × 重试轮次。",
+        "default": 0.35,
+        "min": 0,
+        "max": 5
       },
       "dynamic_limit": {
         "description": "单轮最多推送动态数",

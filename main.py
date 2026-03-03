@@ -1,63 +1,54 @@
 import asyncio
 import json
 import re
-from dataclasses import dataclass, asdict, field
+import socket
+import sys
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import astrbot.api.message_components as Comp
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
 from astrbot.api.star import Context, Star, register
 
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.append(str(CURRENT_DIR))
 
-BILI_BV_PATTERN = r"\bBV[0-9A-Za-z]{10}\b"
-BILI_AV_PATTERN = r"\bav\d+\b"
-BILI_SHORT_LINK_PATTERN = r"https?://(?:b23\.tv|bili2233\.cn)/[^\s'\"<>]+"
-BILI_VIDEO_LINK_PATTERN = r"https?://(?:www\.|m\.)?bilibili\.com/video/[^\s'\"<>]+"
-BILI_MESSAGE_PATTERN = (
-    r"(?:"
-    + BILI_BV_PATTERN
-    + r"|"
-    + BILI_AV_PATTERN
-    + r"|"
-    + BILI_SHORT_LINK_PATTERN
-    + r"|"
-    + BILI_VIDEO_LINK_PATTERN
-    + r")"
-)
-
-VALID_FILTER_TYPES = {
-    "forward",
-    "lottery",
-    "video",
-    "article",
-    "draw",
-    "live",
-    "forward_lottery",
-}
-
-QUALITY_TO_QN = {
-    "360P": 16,
-    "480P": 32,
-    "720P": 64,
-    "1080P": 80,
-    "1080P+": 112,
-    "1080P60": 116,
-    "4K": 120,
-}
-
-
-@dataclass
-class Subscription:
-    uid: int
-    last_dynamic_id: str = ""
-    is_live: bool = False
-    filter_types: List[str] = field(default_factory=list)
-    filter_regex: List[str] = field(default_factory=list)
-    recent_ids: List[str] = field(default_factory=list)
+try:
+    from .bili_constants import BILI_AV_PATTERN, BILI_BV_PATTERN, BILI_MESSAGE_PATTERN, BILI_SHORT_LINK_PATTERN, QUALITY_TO_QN, VALID_FILTER_TYPES
+    from .bili_helpers import (
+        extract_links_and_ids,
+        is_top_dynamic,
+        parse_filter_args,
+        parse_page_index,
+    )
+    from .bili_logic import (
+        append_recent_id,
+        build_dynamic_chain,
+        build_uid_targets,
+        should_filter_dynamic,
+    )
+    from .bili_models import Subscription
+except ImportError:
+    from bili_constants import BILI_AV_PATTERN, BILI_BV_PATTERN, BILI_MESSAGE_PATTERN, BILI_SHORT_LINK_PATTERN, QUALITY_TO_QN, VALID_FILTER_TYPES
+    from bili_helpers import (
+        extract_links_and_ids,
+        is_top_dynamic,
+        parse_filter_args,
+        parse_page_index,
+    )
+    from bili_logic import (
+        append_recent_id,
+        build_dynamic_chain,
+        build_uid_targets,
+        should_filter_dynamic,
+    )
+    from bili_models import Subscription
 
 
 @register("astrbot_plugin_bili_all_function", "existyay", "B站链接解析与UP动态订阅", "0.2.0")
@@ -70,7 +61,6 @@ class BiliAllPlugin(Star):
         self._running = False
 
         self.enable_bili_parse = True
-        self.enable_parse_miniapp = True
         self.poll_interval_seconds = 300
         self.timeout_seconds = 15
         self.dynamic_limit = 3
@@ -84,6 +74,8 @@ class BiliAllPlugin(Star):
         self.video_max_size_mb = 100
         self.video_auto_delete = True
         self.bili_cookie = ""
+        self.http_retry_count = 2
+        self.http_retry_delay_seconds = 0.35
 
         self._refresh_config()
 
@@ -131,7 +123,6 @@ class BiliAllPlugin(Star):
 
     def _refresh_config(self) -> None:
         self.enable_bili_parse = bool(self._get_config_value("features.enable_bili_parse", True))
-        self.enable_parse_miniapp = bool(self._get_config_value("features.enable_parse_miniapp", True))
         self.poll_interval_seconds = self._coerce_positive_int(
             self._get_config_value("subscription.poll_interval_seconds", 300),
             300,
@@ -175,6 +166,15 @@ class BiliAllPlugin(Star):
         self.bili_cookie = str(
             self._get_config_value("video_download.bili_cookie", "")
         ).strip()
+        try:
+            self.http_retry_count = max(0, int(self._get_config_value("subscription.http_retry_count", 2)))
+        except Exception:
+            self.http_retry_count = 2
+        self.http_retry_delay_seconds = float(
+            self._get_config_value("subscription.http_retry_delay_seconds", 0.35)
+        )
+        if self.http_retry_delay_seconds < 0:
+            self.http_retry_delay_seconds = 0.35
 
         raw_admin_ids = self._get_config_value("permission.admin_ids", "")
         parsed_admin_ids: set[str] = set()
@@ -188,7 +188,11 @@ class BiliAllPlugin(Star):
     def _build_http_headers(self, *, with_referer: bool = False, with_cookie: bool = False) -> Dict[str, str]:
         headers: Dict[str, str] = {
             "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Connection": "keep-alive",
         }
+        headers["Origin"] = "https://www.bilibili.com"
         if with_referer:
             headers["Referer"] = "https://www.bilibili.com/"
         if with_cookie and self.bili_cookie:
@@ -268,22 +272,7 @@ class BiliAllPlugin(Star):
 
     @staticmethod
     def _extract_links_and_ids(text: str) -> List[str]:
-        if not text:
-            return []
-        links: List[str] = []
-        links.extend(re.findall(BILI_VIDEO_LINK_PATTERN, text, re.IGNORECASE))
-        links.extend(re.findall(BILI_SHORT_LINK_PATTERN, text, re.IGNORECASE))
-        links.extend(re.findall(BILI_BV_PATTERN, text))
-        links.extend(re.findall(BILI_AV_PATTERN, text, re.IGNORECASE))
-        seen = set()
-        unique: List[str] = []
-        for item in links:
-            lower = item.lower()
-            if lower in seen:
-                continue
-            seen.add(lower)
-            unique.append(item)
-        return unique
+        return extract_links_and_ids(text)
 
     @staticmethod
     def _extract_urls_from_text(text: str) -> List[str]:
@@ -360,75 +349,172 @@ class BiliAllPlugin(Star):
         except Exception as exc:
             logger.warning("解析 JSON 卡片失败: %s", str(exc))
 
-        dedup = list(dict.fromkeys(links))
-        return dedup
+        return list(dict.fromkeys(links))
 
-    def _has_json_component(self, event: AstrMessageEvent) -> bool:
+    def _extract_json_links_from_event(self, event: AstrMessageEvent) -> List[str]:
+        links: List[str] = []
         if not hasattr(event, "message_obj") or not hasattr(event.message_obj, "message"):
-            return False
+            return links
+
         for component in event.message_obj.message:
+            comp_payload: Any = component
+            is_json = False
+
             if isinstance(component, dict):
                 comp_type = str(component.get("type") or "").lower()
                 if comp_type == "reply":
                     continue
-                if "json" in comp_type:
-                    return True
-                continue
-            if isinstance(component, Comp.Json):
-                return True
-            comp_type = str(getattr(component, "type", "") or "").lower()
-            if "json" in comp_type:
-                return True
-        return False
+                is_json = "json" in comp_type
+                comp_payload = component.get("data") or component
+            else:
+                if isinstance(component, Comp.Json):
+                    is_json = True
+                    comp_payload = getattr(component, "data", component)
+                else:
+                    comp_type = str(getattr(component, "type", "") or "").lower()
+                    is_json = "json" in comp_type
+                    if is_json and hasattr(component, "data"):
+                        comp_payload = getattr(component, "data")
 
-    async def _resolve_video_ref_from_links(self, links: List[str]) -> Dict[str, Any] | None:
-        for link in links:
-            ref = await self._extract_video_ref(link)
+            if is_json:
+                links.extend(self.extract_links_from_json(comp_payload))
+
+        return list(dict.fromkeys(links))
+
+    async def _extract_video_ref_from_token(self, token: str) -> Dict[str, Any] | None:
+        current = token
+        if re.match(BILI_SHORT_LINK_PATTERN, token, re.IGNORECASE):
+            current = await self._resolve_short_url(token)
+
+        bvid_match = re.search(BILI_BV_PATTERN, current)
+        if bvid_match:
+            return {
+                "bvid": bvid_match.group(0),
+                "aid": None,
+                "source": token,
+                "page": self._parse_page_index(current),
+            }
+
+        avid_match = re.search(BILI_AV_PATTERN, current, re.IGNORECASE)
+        if avid_match:
+            return {
+                "bvid": None,
+                "aid": int(avid_match.group(0)[2:]),
+                "source": token,
+                "page": self._parse_page_index(current),
+            }
+        return None
+
+    async def _extract_video_ref_from_tokens(self, tokens: List[str]) -> Dict[str, Any] | None:
+        for token in tokens:
+            ref = await self._extract_video_ref_from_token(token)
             if ref:
                 return ref
         return None
 
     async def _resolve_short_url(self, short_url: str) -> str:
-        def _resolve() -> str:
-            req = Request(short_url, headers=self._build_http_headers(with_referer=True, with_cookie=True))
-            with urlopen(req, timeout=self.timeout_seconds) as resp:
-                return str(resp.geturl())
-
-        try:
-            return await asyncio.to_thread(_resolve)
-        except Exception:
+        result = await self._request_with_retry(
+            url=short_url,
+            method="GET",
+            headers=self._build_http_headers(with_referer=True, with_cookie=True),
+            read_body=False,
+            scene="resolve_short_url",
+        )
+        if not result:
             return short_url
+        return str(result.get("final_url") or short_url)
+
+    @staticmethod
+    def _is_retryable_http_status(code: int) -> bool:
+        return code in {408, 425, 429, 500, 502, 503, 504}
+
+    def _classify_request_exception(self, exc: Exception) -> Tuple[str, bool]:
+        if isinstance(exc, HTTPError):
+            code = int(getattr(exc, "code", 0) or 0)
+            if 400 <= code < 500:
+                return f"http_client_{code}", self._is_retryable_http_status(code)
+            if code >= 500:
+                return f"http_server_{code}", self._is_retryable_http_status(code)
+            return f"http_{code}", self._is_retryable_http_status(code)
+        if isinstance(exc, (TimeoutError, socket.timeout)):
+            return "timeout", True
+        if isinstance(exc, URLError):
+            return "network", True
+        return "unknown", False
+
+    async def _request_with_retry(
+        self,
+        *,
+        url: str,
+        method: str,
+        headers: Dict[str, str],
+        read_body: bool,
+        scene: str,
+    ) -> Optional[Dict[str, Any]]:
+        def _request_once() -> Dict[str, Any]:
+            req = Request(url, headers=headers, method=method)
+            with urlopen(req, timeout=self.timeout_seconds) as resp:
+                body = resp.read() if read_body else b""
+                return {
+                    "body": body,
+                    "headers": resp.headers,
+                    "status": int(getattr(resp, "status", 200) or 200),
+                    "final_url": str(resp.geturl()),
+                }
+
+        max_attempts = self.http_retry_count + 1
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return await asyncio.to_thread(_request_once)
+            except Exception as exc:
+                category, retryable = self._classify_request_exception(exc)
+                logger.warning(
+                    "请求失败[%s][%s] attempt %d/%d: %s",
+                    scene,
+                    category,
+                    attempt,
+                    max_attempts,
+                    str(exc),
+                )
+                if (not retryable) or attempt >= max_attempts:
+                    break
+                await asyncio.sleep(self.http_retry_delay_seconds * attempt)
+        return None
 
     async def _http_get_json(self, base_url: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        def _request() -> Dict[str, Any]:
-            query = urlencode(params, doseq=True)
-            full_url = f"{base_url}?{query}" if query else base_url
-            req = Request(full_url, headers=self._build_http_headers(with_referer=True, with_cookie=True))
-            with urlopen(req, timeout=self.timeout_seconds) as resp:
-                body = resp.read().decode("utf-8", errors="ignore")
-            return json.loads(body)
-
+        query = urlencode(params, doseq=True)
+        full_url = f"{base_url}?{query}" if query else base_url
+        result = await self._request_with_retry(
+            url=full_url,
+            method="GET",
+            headers=self._build_http_headers(with_referer=True, with_cookie=True),
+            read_body=True,
+            scene="http_get_json",
+        )
+        if not result:
+            return None
         try:
-            return await asyncio.to_thread(_request)
+            body = bytes(result.get("body") or b"").decode("utf-8", errors="ignore")
+            return json.loads(body)
         except Exception as exc:
-            logger.warning("请求失败: %s", str(exc))
+            logger.warning("请求失败[http_get_json][json_decode]: %s", str(exc))
             return None
 
     async def _probe_content_length(self, url: str) -> Optional[int]:
-        def _head() -> Optional[int]:
-            req = Request(
-                url,
-                headers=self._build_http_headers(with_referer=True, with_cookie=True),
-                method="HEAD",
-            )
-            with urlopen(req, timeout=self.timeout_seconds) as resp:
-                length = resp.headers.get("Content-Length")
-                if not length:
-                    return None
-                return int(length)
-
+        result = await self._request_with_retry(
+            url=url,
+            method="HEAD",
+            headers=self._build_http_headers(with_referer=True, with_cookie=True),
+            read_body=False,
+            scene="probe_content_length",
+        )
+        if not result:
+            return None
         try:
-            return await asyncio.to_thread(_head)
+            length = result.get("headers", {}).get("Content-Length")
+            if not length:
+                return None
+            return int(length)
         except Exception:
             return None
 
@@ -438,7 +524,7 @@ class BiliAllPlugin(Star):
         save_path: Path,
         max_bytes: int,
     ) -> int:
-        def _download() -> int:
+        def _download_once() -> int:
             req = Request(url, headers=self._build_http_headers(with_referer=True, with_cookie=True))
             total = 0
             save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -454,7 +540,31 @@ class BiliAllPlugin(Star):
                         f.write(chunk)
             return total
 
-        return await asyncio.to_thread(_download)
+        max_attempts = self.http_retry_count + 1
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return await asyncio.to_thread(_download_once)
+            except ValueError:
+                raise
+            except Exception as exc:
+                category, retryable = self._classify_request_exception(exc)
+                logger.warning(
+                    "请求失败[%s][%s] attempt %d/%d: %s",
+                    "download_video",
+                    category,
+                    attempt,
+                    max_attempts,
+                    str(exc),
+                )
+                try:
+                    save_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                if (not retryable) or attempt >= max_attempts:
+                    raise
+                await asyncio.sleep(self.http_retry_delay_seconds * attempt)
+
+        raise RuntimeError("下载失败")
 
     @staticmethod
     def _quality_candidates(label: str) -> List[int]:
@@ -607,43 +717,7 @@ class BiliAllPlugin(Star):
 
     @staticmethod
     def _parse_page_index(url_or_text: str) -> int:
-        try:
-            parsed = urlparse(url_or_text)
-            query = parsed.query or ""
-            if "p=" not in query:
-                return 0
-            segs = [part for part in query.split("&") if part.startswith("p=")]
-            if not segs:
-                return 0
-            return max(int(segs[0].split("=", 1)[1]) - 1, 0)
-        except Exception:
-            return 0
-
-    async def _extract_video_ref(self, text: str) -> Dict[str, Any] | None:
-        tokens = self._extract_links_and_ids(text)
-        for token in tokens:
-            current = token
-            if re.match(BILI_SHORT_LINK_PATTERN, token, re.IGNORECASE):
-                current = await self._resolve_short_url(token)
-
-            bvid_match = re.search(BILI_BV_PATTERN, current)
-            if bvid_match:
-                return {
-                    "bvid": bvid_match.group(0),
-                    "aid": None,
-                    "source": token,
-                    "page": self._parse_page_index(current),
-                }
-
-            avid_match = re.search(BILI_AV_PATTERN, current, re.IGNORECASE)
-            if avid_match:
-                return {
-                    "bvid": None,
-                    "aid": int(avid_match.group(0)[2:]),
-                    "source": token,
-                    "page": self._parse_page_index(current),
-                }
-        return None
+        return parse_page_index(url_or_text)
 
     async def _get_video_info(self, ref: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         params = {}
@@ -663,81 +737,6 @@ class BiliAllPlugin(Star):
             return None
         return payload.get("data")
 
-    @staticmethod
-    def _format_count(value: int) -> str:
-        if value >= 100000000:
-            return f"{value / 100000000:.1f}亿"
-        if value >= 10000:
-            return f"{value / 10000:.1f}万"
-        return str(value)
-
-    @staticmethod
-    def _format_duration(seconds: int) -> str:
-        m, s = divmod(max(seconds, 0), 60)
-        h, m = divmod(m, 60)
-        if h > 0:
-            return f"{h}:{m:02d}:{s:02d}"
-        return f"{m}:{s:02d}"
-
-    def _build_video_chain(self, info: Dict[str, Any], ref: Dict[str, Any]) -> List[object]:
-        chain: List[object] = []
-
-        stat = info.get("stat", {})
-        owner = info.get("owner", {})
-        pages = info.get("pages") or []
-        page_count = len(pages) if pages else 1
-        page_index = min(int(ref.get("page", 0) or 0), max(page_count - 1, 0))
-        page = pages[page_index] if pages and page_index < len(pages) else {}
-
-        bvid = info.get("bvid", "")
-        title = info.get("title", "未知标题")
-        up_name = owner.get("name", "未知UP")
-        desc = (info.get("desc") or "").strip()
-        duration = int(page.get("duration") or info.get("duration") or 0)
-        url = f"https://www.bilibili.com/video/{bvid}" if bvid else ""
-        part = page.get("part") or ""
-        cover_url = str(info.get("pic") or "").strip()
-
-        if cover_url.startswith("http://") or cover_url.startswith("https://"):
-            try:
-                chain.append(Comp.Image.fromURL(cover_url))
-            except Exception:
-                pass
-
-        lines = [
-            f"🎬 {title}",
-            f"👤 UP: {up_name}",
-            f"▶️ 播放: {self._format_count(int(stat.get('view', 0) or 0))}",
-            f"👍 点赞: {self._format_count(int(stat.get('like', 0) or 0))}",
-            f"⏱️ 时长: {self._format_duration(duration)}",
-        ]
-        if page_count > 1:
-            lines.append(f"📄 分P: {page_index + 1}/{page_count} {part}".strip())
-        if desc:
-            lines.append(f"📝 简介: {desc[:120]}{'...' if len(desc) > 120 else ''}")
-        if url:
-            lines.append(url)
-        chain.append(Comp.Plain("\n".join(lines)))
-        return chain
-
-    async def _render_video_text(self, ref: Dict[str, Any]) -> Optional[str]:
-        info = await self._get_video_info(ref)
-        if not info:
-            return None
-        chain = self._build_video_chain(info, ref)
-        if not chain:
-            return None
-        for item in chain:
-            if isinstance(item, Comp.Plain):
-                return getattr(item, "text", None)
-        return None
-
-    async def _build_video_chain_from_ref(self, ref: Dict[str, Any]) -> List[object]:
-        info = await self._get_video_info(ref)
-        if not info:
-            return []
-        return self._build_video_chain(info, ref)
-
     async def _fetch_latest_dynamic(self, uid: int) -> Optional[Dict[str, Any]]:
         items = await self._fetch_dynamic_items(uid)
         if not items:
@@ -748,13 +747,106 @@ class BiliAllPlugin(Star):
         url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space"
         params = {"host_mid": uid}
         payload = await self._http_get_json(url, params)
-        if not payload:
+        if payload and payload.get("code") == 0:
+            items = payload.get("data", {}).get("items") or []
+            normalized = [item for item in items if isinstance(item, dict) and item.get("id_str")]
+            if normalized:
+                return normalized
+
+        fallback_items = await self._fetch_dynamic_items_fallback(uid)
+        if fallback_items:
+            logger.info("动态接口已切换兜底模式 uid=%s items=%d", uid, len(fallback_items))
+        return fallback_items
+
+    @staticmethod
+    def _map_legacy_dynamic_type(type_id: int) -> str:
+        if type_id == 1:
+            return "DYNAMIC_TYPE_FORWARD"
+        if type_id in (2, 4):
+            return "DYNAMIC_TYPE_DRAW"
+        if type_id == 8:
+            return "DYNAMIC_TYPE_AV"
+        if type_id == 64:
+            return "DYNAMIC_TYPE_ARTICLE"
+        return "DYNAMIC_TYPE_WORD"
+
+    @staticmethod
+    def _extract_legacy_dynamic_text(card_obj: Dict[str, Any]) -> str:
+        if not isinstance(card_obj, dict):
+            return ""
+
+        item = card_obj.get("item") or {}
+        if isinstance(item, dict):
+            text = item.get("content") or item.get("description") or ""
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+
+        for key in ("dynamic", "title", "desc"):
+            val = card_obj.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+        return ""
+
+    @staticmethod
+    def _extract_legacy_uname(desc_obj: Dict[str, Any], card_obj: Dict[str, Any]) -> str:
+        profile = desc_obj.get("user_profile") or {}
+        info = profile.get("info") if isinstance(profile, dict) else {}
+        uname = info.get("uname") if isinstance(info, dict) else ""
+        if isinstance(uname, str) and uname.strip():
+            return uname.strip()
+
+        user = card_obj.get("user") or {}
+        name = user.get("name") if isinstance(user, dict) else ""
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+        return "未知UP"
+
+    async def _fetch_dynamic_items_fallback(self, uid: int) -> List[Dict[str, Any]]:
+        url = "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/space_history"
+        params = {"host_uid": uid, "offset_dynamic_id": 0, "need_top": 1}
+        payload = await self._http_get_json(url, params)
+        if not payload or payload.get("code") != 0:
             return []
 
-        if payload.get("code") != 0:
+        cards = payload.get("data", {}).get("cards") or []
+        if not isinstance(cards, list):
             return []
-        items = payload.get("data", {}).get("items") or []
-        return [item for item in items if isinstance(item, dict) and item.get("id_str")]
+
+        items: List[Dict[str, Any]] = []
+        for raw in cards:
+            if not isinstance(raw, dict):
+                continue
+            desc_obj = raw.get("desc") if isinstance(raw.get("desc"), dict) else {}
+            dyn_id = str(desc_obj.get("dynamic_id_str") or desc_obj.get("dynamic_id") or "").strip()
+            if not dyn_id:
+                continue
+
+            card_obj: Dict[str, Any] = {}
+            card_raw = raw.get("card")
+            if isinstance(card_raw, str) and card_raw.strip():
+                try:
+                    parsed = json.loads(card_raw)
+                    if isinstance(parsed, dict):
+                        card_obj = parsed
+                except Exception:
+                    card_obj = {}
+
+            type_id = int(desc_obj.get("type") or 0)
+            text = self._extract_legacy_dynamic_text(card_obj)
+            uname = self._extract_legacy_uname(desc_obj, card_obj)
+
+            items.append(
+                {
+                    "id_str": dyn_id,
+                    "type": self._map_legacy_dynamic_type(type_id),
+                    "modules": {
+                        "module_author": {"name": uname},
+                        "module_dynamic": {"desc": {"text": text}},
+                    },
+                }
+            )
+
+        return items
 
     async def _fetch_live_status(self, uid: int) -> Optional[Dict[str, Any]]:
         url = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids"
@@ -768,202 +860,25 @@ class BiliAllPlugin(Star):
         data = payload.get("data") or {}
         return data.get(str(uid))
 
-    @staticmethod
-    def _dynamic_summary(item: Dict[str, Any]) -> str:
-        modules = item.get("modules", {}) if isinstance(item, dict) else {}
-        author = modules.get("module_author", {}) if isinstance(modules, dict) else {}
-        dynamic = modules.get("module_dynamic", {}) if isinstance(modules, dict) else {}
-        desc = dynamic.get("desc", {}) if isinstance(dynamic, dict) else {}
-        text = desc.get("text") or ""
-        name = author.get("name") or "未知UP"
-        dyn_id = item.get("id_str") or ""
-        jump = f"https://t.bilibili.com/{dyn_id}" if dyn_id else ""
-        lines = [f"📣 {name} 发布了新动态"]
-        if text:
-            lines.append(text[:180] + ("..." if len(text) > 180 else ""))
-        if jump:
-            lines.append(jump)
-        return "\n".join(lines)
-
-    def _extract_dynamic_cover(self, item: Dict[str, Any]) -> str:
-        modules = item.get("modules") or {}
-        if not isinstance(modules, dict):
-            return ""
-        dynamic = modules.get("module_dynamic") or {}
-        if not isinstance(dynamic, dict):
-            return ""
-        major = dynamic.get("major") or {}
-        if not isinstance(major, dict):
-            return ""
-
-        archive = major.get("archive") or {}
-        if isinstance(archive, dict):
-            cover = archive.get("cover")
-            if isinstance(cover, str) and cover.startswith(("http://", "https://")):
-                return cover
-
-        opus = major.get("opus") or {}
-        if isinstance(opus, dict):
-            pics = opus.get("pics") or []
-            if isinstance(pics, list) and pics:
-                first = pics[0]
-                if isinstance(first, dict):
-                    for key in ("url", "img_src", "src"):
-                        val = first.get(key)
-                        if isinstance(val, str) and val.startswith(("http://", "https://")):
-                            return val
-                elif isinstance(first, str) and first.startswith(("http://", "https://")):
-                    return first
-        return ""
-
     def _build_dynamic_chain(self, item: Dict[str, Any]) -> List[object]:
-        chain: List[object] = []
-        cover = self._extract_dynamic_cover(item)
-        if cover:
-            try:
-                chain.append(Comp.Image.fromURL(cover))
-            except Exception:
-                pass
-        chain.append(Comp.Plain(self._dynamic_summary(item)))
-        return chain
+        return build_dynamic_chain(item)
 
     @staticmethod
     def _is_top_dynamic(item: Dict[str, Any]) -> bool:
-        modules = item.get("modules") or {}
-        module_tag = modules.get("module_tag") if isinstance(modules, dict) else None
-        if not isinstance(module_tag, dict):
-            return False
-        return str(module_tag.get("text") or "") == "置顶"
-
-    @staticmethod
-    def _extract_dynamic_text(item: Dict[str, Any]) -> str:
-        modules = item.get("modules") or {}
-        if not isinstance(modules, dict):
-            return ""
-        dynamic = modules.get("module_dynamic") or {}
-        if not isinstance(dynamic, dict):
-            return ""
-
-        parts: List[str] = []
-        desc = dynamic.get("desc") or {}
-        if isinstance(desc, dict):
-            text = desc.get("text")
-            if text:
-                parts.append(str(text))
-
-        major = dynamic.get("major") or {}
-        if isinstance(major, dict):
-            opus = major.get("opus") or {}
-            if isinstance(opus, dict):
-                summary = opus.get("summary") or {}
-                if isinstance(summary, dict) and summary.get("text"):
-                    parts.append(str(summary.get("text")))
-
-            archive = major.get("archive") or {}
-            if isinstance(archive, dict):
-                if archive.get("title"):
-                    parts.append(str(archive.get("title")))
-                if archive.get("desc"):
-                    parts.append(str(archive.get("desc")))
-
-        return "\n".join([x for x in parts if x]).strip()
-
-    @staticmethod
-    def _is_lottery_text(text: str) -> bool:
-        if not text:
-            return False
-        if "互动抽奖" in text:
-            return True
-        return bool(re.search(r"恭喜.*等\d+位同学中奖", text))
-
-    def _is_forward_lottery(self, item: Dict[str, Any]) -> bool:
-        try:
-            orig = item.get("orig") or {}
-            modules = orig.get("modules") or {}
-            dynamic = modules.get("module_dynamic") or {}
-            major = dynamic.get("major") or {}
-            opus = major.get("opus") or {}
-            summary = opus.get("summary") or {}
-            nodes = summary.get("rich_text_nodes") or []
-            if nodes and isinstance(nodes[0], dict):
-                return str(nodes[0].get("text") or "") == "互动抽奖"
-        except Exception:
-            return False
-        return False
-
-    def _match_filter_regex(self, text: str, filter_regex: List[str]) -> bool:
-        if not text or not filter_regex:
-            return False
-        for pattern in filter_regex:
-            try:
-                if re.search(pattern, text):
-                    return True
-            except re.error:
-                logger.warning("无效正则表达式: %s", pattern)
-                continue
-        return False
+        return is_top_dynamic(item)
 
     def _should_filter_dynamic(self, item: Dict[str, Any], sub: Subscription) -> bool:
-        filter_types = set(sub.filter_types or [])
-        dynamic_type = str(item.get("type") or "")
-        text = self._extract_dynamic_text(item)
-
-        if dynamic_type == "DYNAMIC_TYPE_FORWARD":
-            if "forward" in filter_types:
-                return True
-            if "forward_lottery" in filter_types and self._is_forward_lottery(item):
-                return True
-            if "lottery" in filter_types and self._is_lottery_text(text):
-                return True
-        elif dynamic_type in ("DYNAMIC_TYPE_DRAW", "DYNAMIC_TYPE_WORD"):
-            if "draw" in filter_types:
-                return True
-            if "lottery" in filter_types and self._is_lottery_text(text):
-                return True
-        elif dynamic_type == "DYNAMIC_TYPE_AV":
-            if "video" in filter_types:
-                return True
-        elif dynamic_type == "DYNAMIC_TYPE_ARTICLE":
-            if "article" in filter_types:
-                return True
-
-        if self._match_filter_regex(text, sub.filter_regex or []):
-            return True
-        return False
+        return should_filter_dynamic(item, sub)
 
     @staticmethod
     def _parse_filter_args(args: List[str]) -> Tuple[List[str], List[str]]:
-        filter_types: List[str] = []
-        filter_regex: List[str] = []
-        for arg in args:
-            token = str(arg).strip()
-            if not token:
-                continue
-            if token in VALID_FILTER_TYPES:
-                filter_types.append(token)
-            else:
-                filter_regex.append(token)
-        filter_types = list(dict.fromkeys(filter_types))
-        filter_regex = list(dict.fromkeys(filter_regex))
-        return filter_types, filter_regex
+        return parse_filter_args(args, VALID_FILTER_TYPES)
 
     def _append_recent_id(self, sub: Subscription, dyn_id: str) -> None:
-        if not dyn_id:
-            return
-        recent = sub.recent_ids or []
-        if dyn_id in recent:
-            recent.remove(dyn_id)
-        recent.append(dyn_id)
-        if len(recent) > self.recent_ids_limit:
-            recent = recent[-self.recent_ids_limit :]
-        sub.recent_ids = recent
+        append_recent_id(sub, dyn_id, self.recent_ids_limit)
 
     def _build_uid_targets(self) -> Dict[int, List[Tuple[str, Subscription]]]:
-        uid_targets: Dict[int, List[Tuple[str, Subscription]]] = {}
-        for session, items in self.subscriptions.items():
-            for sub in items:
-                uid_targets.setdefault(sub.uid, []).append((session, sub))
-        return uid_targets
+        return build_uid_targets(self.subscriptions)
 
     async def _process_single_subscription(
         self,
@@ -1142,7 +1057,6 @@ class BiliAllPlugin(Star):
 
         lines.append("\n🧩 功能开关：")
         lines.append(f"- 链接解析: {'开启' if self.enable_bili_parse else '关闭'}")
-        lines.append(f"- 小程序解析: {'开启' if self.enable_parse_miniapp else '关闭'}")
         lines.append(f"- 下载发送: {'开启' if self.enable_video_download else '关闭'}")
         lines.append(f"- 下载画质: {self.video_quality_label}")
         lines.append(f"- 时长上限: {self.video_max_duration_seconds}s")
@@ -1196,8 +1110,23 @@ class BiliAllPlugin(Star):
                 changed = False
                 uid_targets = self._build_uid_targets()
                 for uid, targets in uid_targets.items():
-                    dynamic_items = await self._fetch_dynamic_items(uid)
-                    live = await self._fetch_live_status(uid)
+                    dynamic_result, live_result = await asyncio.gather(
+                        self._fetch_dynamic_items(uid),
+                        self._fetch_live_status(uid),
+                        return_exceptions=True,
+                    )
+
+                    if isinstance(dynamic_result, Exception):
+                        logger.warning("拉取动态失败 uid=%s: %s", uid, str(dynamic_result))
+                        dynamic_items: List[Dict[str, Any]] = []
+                    else:
+                        dynamic_items = dynamic_result
+
+                    if isinstance(live_result, Exception):
+                        logger.warning("拉取直播状态失败 uid=%s: %s", uid, str(live_result))
+                        live: Optional[Dict[str, Any]] = None
+                    else:
+                        live = live_result
 
                     for session, sub in targets:
                         if await self._process_single_subscription(
@@ -1437,71 +1366,37 @@ class BiliAllPlugin(Star):
                 lines.append(f"  • UID {item.uid}{suffix}")
         yield event.plain_result("\n".join(lines))
 
-    @filter.regex(BILI_MESSAGE_PATTERN, priority=10)
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
     async def handle_bili_parse(self, event: AstrMessageEvent):
         if not self.enable_bili_parse:
             return
         if event.get_sender_id() == event.get_self_id():
             return
-        if self._has_json_component(event):
-            return
-        ref = await self._extract_video_ref(event.message_str or "")
+
+        ref: Dict[str, Any] | None = None
+        matched_bili = False
+
+        text_tokens = self._extract_links_and_ids(event.message_str or "")
+        if text_tokens:
+            matched_bili = True
+            ref = await self._extract_video_ref_from_tokens(text_tokens)
+
+        if not ref:
+            links = self._extract_json_links_from_event(event)
+            if links:
+                bili_links = [
+                    link for link in links if re.search(BILI_MESSAGE_PATTERN, link, re.IGNORECASE)
+                ]
+                if bili_links:
+                    matched_bili = True
+                    ref = await self._extract_video_ref_from_tokens(bili_links)
+                    if not ref:
+                        logger.warning("从 QQ 小程序卡片提取到 B站链接但无法解析: %s", bili_links)
+
+        if matched_bili:
+            event.stop_event()
+
         if not ref:
             return
-        chain = await self._build_video_chain_from_ref(ref)
-        if chain:
-            yield event.chain_result(chain)
-        await self._send_downloaded_video(event, ref)
 
-    @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
-    async def handle_json_card_parse(self, event: AstrMessageEvent):
-        """解析 QQ 转发的 Bilibili 小程序 JSON 卡片。"""
-        if not self.enable_parse_miniapp:
-            return
-        if event.get_sender_id() == event.get_self_id():
-            return
-        if not self._has_json_component(event):
-            return
-
-        links: List[str] = []
-        if hasattr(event, "message_obj") and hasattr(event.message_obj, "message"):
-            for component in event.message_obj.message:
-                comp_payload: Any = component
-                is_json = False
-
-                if isinstance(component, dict):
-                    comp_type = str(component.get("type") or "").lower()
-                    if comp_type == "reply":
-                        continue
-                    is_json = "json" in comp_type
-                    comp_payload = component.get("data") or component
-                else:
-                    if isinstance(component, Comp.Json):
-                        is_json = True
-                        comp_payload = getattr(component, "data", component)
-                    else:
-                        comp_type = str(getattr(component, "type", "") or "").lower()
-                        is_json = "json" in comp_type
-                        if is_json and hasattr(component, "data"):
-                            comp_payload = getattr(component, "data")
-
-                if is_json:
-                    links.extend(self.extract_links_from_json(comp_payload))
-
-        if not links:
-            return
-
-        unique_links = list(dict.fromkeys(links))
-        bili_links = [link for link in unique_links if re.search(BILI_MESSAGE_PATTERN, link, re.IGNORECASE)]
-        if not bili_links:
-            return
-
-        ref = await self._resolve_video_ref_from_links(bili_links)
-        if not ref:
-            logger.warning("从 QQ 小程序卡片提取到 B站链接但无法解析: %s", bili_links)
-            return
-
-        chain = await self._build_video_chain_from_ref(ref)
-        if chain:
-            yield event.chain_result(chain)
         await self._send_downloaded_video(event, ref)
