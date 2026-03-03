@@ -18,7 +18,7 @@
       "poll_interval_seconds": {
         "description": "轮询周期(秒)",
         "type": "int",
-        "hint": "每个 UID 的动态/直播检测周期。",
+        "hint": "Round-robin 模式下每轮仅检测 1 个 UID；单 UID 实际检测周期≈轮询周期×订阅UID总数。",
         "default": 300,
         "min": 10,
         "max": 86400
@@ -58,7 +58,7 @@
       "uid_task_gap_seconds": {
         "description": "UID任务间隔(秒)",
         "type": "int",
-        "hint": "相邻 UID 拉取任务的最小间隔，防止请求突发。",
+        "hint": "同一轮内任务间隔；round-robin 每轮仅1个 UID 时通常可设为 0。",
         "default": 1,
         "min": 0,
         "max": 30

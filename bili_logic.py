@@ -1,159 +1,199 @@
+"""业务逻辑：消息链构建、动态过滤、订阅管理辅助。"""
+from __future__ import annotations
+
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 
 try:
     from .bili_helpers import (
-        extract_dynamic_cover,
-        extract_dynamic_text,
-        format_count,
-        format_duration,
-        is_forward_lottery,
-        is_lottery_text,
+        dig, extract_dynamic_cover, extract_dynamic_images, extract_dynamic_text,
+        format_count, format_duration, is_forward_lottery, is_lottery_text,
     )
     from .bili_models import Subscription
 except ImportError:
     from bili_helpers import (
-        extract_dynamic_cover,
-        extract_dynamic_text,
-        format_count,
-        format_duration,
-        is_forward_lottery,
-        is_lottery_text,
+        dig, extract_dynamic_cover, extract_dynamic_images, extract_dynamic_text,
+        format_count, format_duration, is_forward_lottery, is_lottery_text,
     )
     from bili_models import Subscription
 
 
-def build_video_chain(info: Dict[str, Any], ref: Dict[str, Any]) -> List[object]:
-    chain: List[object] = []
+# ───────────────────────── 视频消息链 ─────────────────────────
 
-    stat = info.get("stat", {})
-    owner = info.get("owner", {})
+def build_video_chain(info: dict[str, Any], ref: dict[str, Any]) -> list[object]:
+    """根据视频信息和引用构建消息链（封面 + 文本）。"""
+    stat = info.get("stat") or {}
+    owner = info.get("owner") or {}
     pages = info.get("pages") or []
-    page_count = len(pages) if pages else 1
-    page_index = min(int(ref.get("page", 0) or 0), max(page_count - 1, 0))
-    page = pages[page_index] if pages and page_index < len(pages) else {}
+    page_count = max(len(pages), 1)
+    page_idx = min(int(ref.get("page", 0) or 0), page_count - 1)
+    page = pages[page_idx] if pages and page_idx < len(pages) else {}
 
     bvid = info.get("bvid", "")
-    title = info.get("title", "未知标题")
-    up_name = owner.get("name", "未知UP")
-    desc = (info.get("desc") or "").strip()
     duration = int(page.get("duration") or info.get("duration") or 0)
-    url = f"https://www.bilibili.com/video/{bvid}" if bvid else ""
-    part = page.get("part") or ""
-    cover_url = str(info.get("pic") or "").strip()
+    cover = str(info.get("pic") or "").strip()
 
-    if cover_url.startswith("http://") or cover_url.startswith("https://"):
-        try:
-            chain.append(Comp.Image.fromURL(cover_url))
-        except Exception:
-            pass
-
-    lines = [
-        f"🎬 {title}",
-        f"👤 UP: {up_name}",
-        f"▶️ 播放: {format_count(int(stat.get('view', 0) or 0))}",
-        f"👍 点赞: {format_count(int(stat.get('like', 0) or 0))}",
-        f"⏱️ 时长: {format_duration(duration)}",
-    ]
-    if page_count > 1:
-        lines.append(f"📄 分P: {page_index + 1}/{page_count} {part}".strip())
-    if desc:
-        lines.append(f"📝 简介: {desc[:120]}{'...' if len(desc) > 120 else ''}")
-    if url:
-        lines.append(url)
-    chain.append(Comp.Plain("\n".join(lines)))
-    return chain
-
-
-def dynamic_summary(item: Dict[str, Any]) -> str:
-    modules = item.get("modules", {}) if isinstance(item, dict) else {}
-    author = modules.get("module_author", {}) if isinstance(modules, dict) else {}
-    dynamic = modules.get("module_dynamic", {}) if isinstance(modules, dict) else {}
-    desc = dynamic.get("desc", {}) if isinstance(dynamic, dict) else {}
-    text = desc.get("text") or ""
-    name = author.get("name") or "未知UP"
-    dyn_id = item.get("id_str") or ""
-    jump = f"https://t.bilibili.com/{dyn_id}" if dyn_id else ""
-    lines = [f"📣 {name} 发布了新动态"]
-    if text:
-        lines.append(text[:180] + ("..." if len(text) > 180 else ""))
-    if jump:
-        lines.append(jump)
-    return "\n".join(lines)
-
-
-def build_dynamic_chain(item: Dict[str, Any]) -> List[object]:
-    chain: List[object] = []
-    cover = extract_dynamic_cover(item)
-    if cover:
+    chain: list[object] = []
+    if cover.startswith(("http://", "https://")):
         try:
             chain.append(Comp.Image.fromURL(cover))
         except Exception:
             pass
-    chain.append(Comp.Plain(dynamic_summary(item)))
+
+    lines = [
+        f"{info.get('title', '未知标题')}",
+        f"UP: {owner.get('name', '未知UP')}",
+        f"播放: {format_count(int(stat.get('view', 0) or 0))}",
+        f"点赞: {format_count(int(stat.get('like', 0) or 0))}",
+        f"时长: {format_duration(duration)}",
+    ]
+    if page_count > 1:
+        lines.append(f"分P: {page_idx + 1}/{page_count} {page.get('part') or ''}".strip())
+    desc = (info.get("desc") or "").strip()
+    if desc:
+        lines.append(f"简介: {desc[:120]}{'...' if len(desc) > 120 else ''}")
+    if bvid:
+        lines.append(f"https://www.bilibili.com/video/{bvid}")
+    chain.append(Comp.Plain("\n".join(lines)))
     return chain
 
 
-def match_filter_regex(text: str, filter_regex: List[str]) -> bool:
-    if not text or not filter_regex:
-        return False
-    for pattern in filter_regex:
+# ───────────────────────── 动态消息链 ─────────────────────────
+
+_DYN_TYPE_LABEL: dict[str, str] = {
+    "DYNAMIC_TYPE_DRAW": "图文动态",
+    "DYNAMIC_TYPE_WORD": "文字动态",
+    "DYNAMIC_TYPE_AV": "视频动态",
+    "DYNAMIC_TYPE_ARTICLE": "专栏文章",
+    "DYNAMIC_TYPE_FORWARD": "转发动态",
+    "DYNAMIC_TYPE_LIVE_RCMD": "直播推荐",
+}
+
+
+def _dynamic_author_name(item: dict[str, Any]) -> str:
+    author = dig(item, "modules", "module_author", default={})
+    name = author.get("name") if isinstance(author, dict) else None
+    if not name:
+        mid = author.get("mid") if isinstance(author, dict) else None
+        name = f"UID {mid}" if mid else "UP主"
+    return str(name).strip()
+
+
+def build_dynamic_chain(item: dict[str, Any]) -> list[object]:
+    """构建动态推送消息链：图片 + 富文本摘要 + 链接。"""
+    chain: list[object] = []
+    dyn_type = str(item.get("type") or "")
+    dyn_id = item.get("id_str") or ""
+    name = _dynamic_author_name(item)
+    text = str(dig(item, "modules", "module_dynamic", "desc", "text", default="")).strip()
+
+    # ── 1. 头部：UP主 + 动态类型 ──
+    type_label = _DYN_TYPE_LABEL.get(dyn_type, "动态")
+    header = f"{name} 发布了{type_label}"
+    chain.append(Comp.Plain(header))
+
+    # ── 2. 图片（视频封面 / 图文多图） ──
+    images = extract_dynamic_images(item)
+    for url in images:
         try:
-            if re.search(pattern, text):
-                return True
-        except re.error:
-            logger.warning("无效正则表达式: %s", pattern)
-            continue
-    return False
+            chain.append(Comp.Image.fromURL(url))
+        except Exception:
+            pass
+
+    # ── 3. 正文摘要 ──
+    body_parts: list[str] = []
+    if text:
+        body_parts.append(text[:300] + ("..." if len(text) > 300 else ""))
+    # 视频动态额外展示标题/播放量
+    if dyn_type == "DYNAMIC_TYPE_AV":
+        archive = dig(item, "modules", "module_dynamic", "major", "archive", default={})
+        if isinstance(archive, dict):
+            title = archive.get("title")
+            if title:
+                body_parts.append(title)
+            stat = archive.get("stat") or {}
+            if isinstance(stat, dict):
+                play = stat.get("play")
+                if play is not None:
+                    body_parts.append(f"播放: {format_count(int(play))}")
+    # 转发动态展示原文摘要
+    if dyn_type == "DYNAMIC_TYPE_FORWARD":
+        orig = item.get("orig") or {}
+        if isinstance(orig, dict):
+            orig_name = _dynamic_author_name(orig)
+            orig_text = str(dig(orig, "modules", "module_dynamic", "desc", "text", default="")).strip()
+            if orig_text:
+                body_parts.append(f"@{orig_name}: {orig_text[:120]}{'...' if len(orig_text) > 120 else ''}")
+
+    if body_parts:
+        chain.append(Comp.Plain("\n".join(body_parts)))
+
+    # ── 4. 链接 ──
+    if dyn_id:
+        chain.append(Comp.Plain(f"https://t.bilibili.com/{dyn_id}"))
+
+    return chain
 
 
-def should_filter_dynamic(item: Dict[str, Any], sub: Subscription) -> bool:
-    filter_types = set(sub.filter_types or [])
-    dynamic_type = str(item.get("type") or "")
+# ───────────────────────── 动态过滤 ─────────────────────────
+
+def should_filter_dynamic(item: dict[str, Any], sub: Subscription) -> bool:
+    """判断该动态是否应被过滤（True = 过滤掉）。"""
+    filters = set(sub.filter_types or [])
+    if not filters and not sub.filter_regex:
+        return False
+
+    dyn_type = str(item.get("type") or "")
     text = extract_dynamic_text(item)
 
-    if dynamic_type == "DYNAMIC_TYPE_FORWARD":
-        if "forward" in filter_types:
+    if dyn_type == "DYNAMIC_TYPE_FORWARD":
+        if "forward" in filters:
             return True
-        if "forward_lottery" in filter_types and is_forward_lottery(item):
+        if "forward_lottery" in filters and is_forward_lottery(item):
             return True
-        if "lottery" in filter_types and is_lottery_text(text):
+        if "lottery" in filters and is_lottery_text(text):
             return True
-    elif dynamic_type in ("DYNAMIC_TYPE_DRAW", "DYNAMIC_TYPE_WORD"):
-        if "draw" in filter_types:
+    elif dyn_type in ("DYNAMIC_TYPE_DRAW", "DYNAMIC_TYPE_WORD"):
+        if "draw" in filters:
             return True
-        if "lottery" in filter_types and is_lottery_text(text):
+        if "lottery" in filters and is_lottery_text(text):
             return True
-    elif dynamic_type == "DYNAMIC_TYPE_AV":
-        if "video" in filter_types:
-            return True
-    elif dynamic_type == "DYNAMIC_TYPE_ARTICLE":
-        if "article" in filter_types:
-            return True
-
-    if match_filter_regex(text, sub.filter_regex or []):
+    elif dyn_type == "DYNAMIC_TYPE_AV" and "video" in filters:
         return True
+    elif dyn_type == "DYNAMIC_TYPE_ARTICLE" and "article" in filters:
+        return True
+
+    if text and sub.filter_regex:
+        for pat in sub.filter_regex:
+            try:
+                if re.search(pat, text):
+                    return True
+            except re.error:
+                logger.warning("无效正则表达式: %s", pat)
     return False
 
 
-def append_recent_id(sub: Subscription, dyn_id: str, recent_ids_limit: int) -> None:
+# ───────────────────────── 订阅辅助 ─────────────────────────
+
+def append_recent_id(sub: Subscription, dyn_id: str, limit: int) -> None:
     if not dyn_id:
         return
-    recent = sub.recent_ids or []
+    recent = sub.recent_ids
     if dyn_id in recent:
         recent.remove(dyn_id)
     recent.append(dyn_id)
-    if len(recent) > recent_ids_limit:
-        recent = recent[-recent_ids_limit:]
-    sub.recent_ids = recent
+    if len(recent) > limit:
+        sub.recent_ids = recent[-limit:]
 
 
-def build_uid_targets(subscriptions: Dict[str, List[Subscription]]) -> Dict[int, List[Tuple[str, Subscription]]]:
-    uid_targets: Dict[int, List[Tuple[str, Subscription]]] = {}
-    for session, items in subscriptions.items():
-        for sub in items:
-            uid_targets.setdefault(sub.uid, []).append((session, sub))
-    return uid_targets
+def build_uid_targets(
+    subscriptions: dict[str, list[Subscription]],
+) -> dict[int, list[tuple[str, Subscription]]]:
+    targets: dict[int, list[tuple[str, Subscription]]] = {}
+    for session, subs in subscriptions.items():
+        for sub in subs:
+            targets.setdefault(sub.uid, []).append((session, sub))
+    return targets

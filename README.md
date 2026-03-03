@@ -37,12 +37,12 @@
 ## 说明
 
 - 订阅数据保存于 `data/subscriptions.json`
-- 轮询间隔默认 `300` 秒，可通过配置 `poll_interval_seconds` 调整
+- 轮询采用 round-robin（每轮仅检测 1 个 UID），间隔默认 `300` 秒，可通过配置 `poll_interval_seconds` 调整
 - 请求超时默认 `15` 秒，可通过配置 `timeout_seconds` 调整
 - 每次最多推送 `3` 条新动态，可通过配置 `dynamic_limit` 调整
 - 管理员指令依赖配置项 `admin_ids`（数组，元素为发送者ID）
 - 视频下载暂存目录为 `data/cache/videos`，可配置发送后自动删除
-- 动态订阅默认走新版接口；遇到 `HTTP 412` 等风控失败时会自动回退旧动态接口兜底
+- 动态订阅固定使用 `desktop/v1/feed/space` 稳定源，遇到 `HTTP 412` 时静默降级并等待下一轮重试
 
 ## 配置页面
 

@@ -1,65 +1,77 @@
+"""AstrBot B站全功能插件：链接解析 + UP 主动态订阅 + 直播推送。"""
+from __future__ import annotations
+
 import asyncio
 import json
 import re
 import socket
 import sys
+import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlencode
+from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
 import astrbot.api.message_components as Comp
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
 from astrbot.api.star import Context, Star, register
 
-CURRENT_DIR = Path(__file__).resolve().parent
-if str(CURRENT_DIR) not in sys.path:
-    sys.path.append(str(CURRENT_DIR))
+_DIR = Path(__file__).resolve().parent
+if str(_DIR) not in sys.path:
+    sys.path.append(str(_DIR))
 
 try:
-    from .bili_constants import BILI_AV_PATTERN, BILI_BV_PATTERN, BILI_MESSAGE_PATTERN, BILI_SHORT_LINK_PATTERN, QUALITY_TO_QN, VALID_FILTER_TYPES
+    from .bili_constants import (
+        QUALITY_TO_QN, RE_AV, RE_BV, RE_MESSAGE, RE_SHORT_LINK, RE_URL,
+        VALID_FILTER_TYPES,
+    )
     from .bili_helpers import (
-        extract_links_and_ids,
-        is_top_dynamic,
-        parse_filter_args,
-        parse_page_index,
+        extract_links_and_ids, is_top_dynamic, normalize_modules,
+        parse_filter_args, parse_page_index,
     )
     from .bili_logic import (
-        append_recent_id,
-        build_dynamic_chain,
-        build_uid_targets,
-        should_filter_dynamic,
+        append_recent_id, build_dynamic_chain, build_uid_targets,
+        build_video_chain, should_filter_dynamic,
     )
     from .bili_models import Subscription
 except ImportError:
-    from bili_constants import BILI_AV_PATTERN, BILI_BV_PATTERN, BILI_MESSAGE_PATTERN, BILI_SHORT_LINK_PATTERN, QUALITY_TO_QN, VALID_FILTER_TYPES
+    from bili_constants import (
+        QUALITY_TO_QN, RE_AV, RE_BV, RE_MESSAGE, RE_SHORT_LINK, RE_URL,
+        VALID_FILTER_TYPES,
+    )
     from bili_helpers import (
-        extract_links_and_ids,
-        is_top_dynamic,
-        parse_filter_args,
-        parse_page_index,
+        extract_links_and_ids, is_top_dynamic, normalize_modules,
+        parse_filter_args, parse_page_index,
     )
     from bili_logic import (
-        append_recent_id,
-        build_dynamic_chain,
-        build_uid_targets,
-        should_filter_dynamic,
+        append_recent_id, build_dynamic_chain, build_uid_targets,
+        build_video_chain, should_filter_dynamic,
     )
     from bili_models import Subscription
 
+# ── 模块级常量 ──
+_RETRYABLE_HTTP = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+# ═══════════════════════ 插件主体 ═══════════════════════
 
 @register("astrbot_plugin_bili_all_function", "existyay", "B站链接解析与UP动态订阅", "0.2.0")
 class BiliAllPlugin(Star):
+
+    # ───────────────────── 生命周期 ─────────────────────
+
     def __init__(self, context: Context, config: AstrBotConfig | dict | None = None):
         super().__init__(context)
         self.context = context
         self.config = config or context.get_config() or {}
-        self._poll_task: Optional[asyncio.Task] = None
+        self._poll_task: asyncio.Task | None = None
         self._running = False
 
+        # 配置默认值（会被 _refresh_config 覆盖）
         self.enable_bili_parse = True
         self.poll_interval_seconds = 300
         self.timeout_seconds = 15
@@ -67,7 +79,6 @@ class BiliAllPlugin(Star):
         self.uid_task_gap_seconds = 1
         self.recent_ids_limit = 20
         self.admin_ids: set[str] = set()
-
         self.enable_video_download = False
         self.video_quality_label = "720P"
         self.video_max_duration_seconds = 600
@@ -79,15 +90,15 @@ class BiliAllPlugin(Star):
 
         self._refresh_config()
 
-        self.data_path = Path(__file__).resolve().parent / "data" / "subscriptions.json"
-        self.video_cache_dir = Path(__file__).resolve().parent / "data" / "cache" / "videos"
-        self.subscriptions: Dict[str, List[Subscription]] = {}
+        self.data_path = _DIR / "data" / "subscriptions.json"
+        self.video_cache_dir = _DIR / "data" / "cache" / "videos"
+        self.subscriptions: dict[str, list[Subscription]] = {}
 
     async def initialize(self):
         self._load_subscriptions()
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_loop(), name="bili-dynamic-poll")
-        logger.info("BiliAll 插件初始化完成，订阅数: %d", self._subscription_count())
+        logger.info("BiliAll 插件初始化完成，订阅数: %d", self._sub_count())
 
     async def terminate(self):
         self._running = False
@@ -99,527 +110,420 @@ class BiliAllPlugin(Star):
                 pass
         self._save_subscriptions()
 
-    @staticmethod
-    def _coerce_positive_int(value: Any, default: int) -> int:
-        try:
-            parsed = int(value)
-            if parsed > 0:
-                return parsed
-        except Exception:
-            pass
-        return default
+    # ───────────────────── 配置 ─────────────────────
 
-    def _get_config_value(self, key: str, default: Any) -> Any:
-        keys = key.split(".")
-        value: Any = self.config
-        for k in keys:
-            if isinstance(value, dict):
-                value = value.get(k)
-            else:
+    @staticmethod
+    def _int(value: Any, default: int, *, min_val: int = 1) -> int:
+        """安全整数转换，低于 *min_val* 时回退到 *default*。"""
+        try:
+            v = int(value)
+            return v if v >= min_val else default
+        except Exception:
+            return default
+
+    def _cfg(self, key: str, default: Any = None) -> Any:
+        """按点分路径读取嵌套配置。"""
+        node: Any = self.config
+        for k in key.split("."):
+            if not isinstance(node, dict):
                 return default
-            if value is None:
+            node = node.get(k)
+            if node is None:
                 return default
-        return value
+        return node
 
     def _refresh_config(self) -> None:
-        self.enable_bili_parse = bool(self._get_config_value("features.enable_bili_parse", True))
-        self.poll_interval_seconds = self._coerce_positive_int(
-            self._get_config_value("subscription.poll_interval_seconds", 300),
-            300,
-        )
-        self.timeout_seconds = self._coerce_positive_int(
-            self._get_config_value("subscription.timeout_seconds", 15),
-            15,
-        )
-        self.dynamic_limit = self._coerce_positive_int(
-            self._get_config_value("subscription.dynamic_limit", 3),
-            3,
-        )
-        self.uid_task_gap_seconds = self._coerce_positive_int(
-            self._get_config_value("subscription.uid_task_gap_seconds", 1),
-            1,
-        )
-        self.recent_ids_limit = self._coerce_positive_int(
-            self._get_config_value("subscription.recent_ids_limit", 20),
-            20,
-        )
+        c, ci = self._cfg, self._int
+        self.enable_bili_parse = bool(c("features.enable_bili_parse", True))
+        self.poll_interval_seconds = ci(c("subscription.poll_interval_seconds", 300), 300)
+        self.timeout_seconds = ci(c("subscription.timeout_seconds", 15), 15)
+        self.dynamic_limit = ci(c("subscription.dynamic_limit", 3), 3)
+        self.uid_task_gap_seconds = ci(c("subscription.uid_task_gap_seconds", 1), 1, min_val=0)
+        self.recent_ids_limit = ci(c("subscription.recent_ids_limit", 20), 20)
 
-        self.enable_video_download = bool(
-            self._get_config_value("video_download.enable", False)
-        )
-        self.video_quality_label = str(
-            self._get_config_value("video_download.quality", "720P")
-        ).upper()
-        if self.video_quality_label not in QUALITY_TO_QN:
-            self.video_quality_label = "720P"
-        self.video_max_duration_seconds = self._coerce_positive_int(
-            self._get_config_value("video_download.max_duration_seconds", 600),
-            600,
-        )
-        self.video_max_size_mb = self._coerce_positive_int(
-            self._get_config_value("video_download.max_size_mb", 100),
-            100,
-        )
-        self.video_auto_delete = bool(
-            self._get_config_value("video_download.auto_delete", True)
-        )
-        self.bili_cookie = str(
-            self._get_config_value("video_download.bili_cookie", "")
-        ).strip()
+        self.enable_video_download = bool(c("video_download.enable", False))
+        label = str(c("video_download.quality", "720P")).upper()
+        self.video_quality_label = label if label in QUALITY_TO_QN else "720P"
+        self.video_max_duration_seconds = ci(c("video_download.max_duration_seconds", 600), 600)
+        self.video_max_size_mb = ci(c("video_download.max_size_mb", 100), 100)
+        self.video_auto_delete = bool(c("video_download.auto_delete", True))
+        self.bili_cookie = str(c("video_download.bili_cookie", "") or "").strip()
+        self.http_retry_count = max(0, ci(c("subscription.http_retry_count", 2), 2, min_val=0))
         try:
-            self.http_retry_count = max(0, int(self._get_config_value("subscription.http_retry_count", 2)))
-        except Exception:
-            self.http_retry_count = 2
-        self.http_retry_delay_seconds = float(
-            self._get_config_value("subscription.http_retry_delay_seconds", 0.35)
-        )
-        if self.http_retry_delay_seconds < 0:
+            d = float(c("subscription.http_retry_delay_seconds", 0.35))
+            self.http_retry_delay_seconds = d if d >= 0 else 0.35
+        except (TypeError, ValueError):
             self.http_retry_delay_seconds = 0.35
 
-        raw_admin_ids = self._get_config_value("permission.admin_ids", "")
-        parsed_admin_ids: set[str] = set()
-        if isinstance(raw_admin_ids, list):
-            parsed_admin_ids = {str(x).strip() for x in raw_admin_ids if str(x).strip()}
-        elif isinstance(raw_admin_ids, str):
-            parts = re.split(r"[,\s\n]+", raw_admin_ids.strip()) if raw_admin_ids.strip() else []
-            parsed_admin_ids = {p.strip() for p in parts if p.strip()}
-        self.admin_ids = parsed_admin_ids
+        raw = c("permission.admin_ids", "")
+        if isinstance(raw, list):
+            self.admin_ids = {str(x).strip() for x in raw if str(x).strip()}
+        elif isinstance(raw, str) and raw.strip():
+            self.admin_ids = {p for p in re.split(r"[,\s]+", raw.strip()) if p}
+        else:
+            self.admin_ids = set()
 
-    def _build_http_headers(self, *, with_referer: bool = False, with_cookie: bool = False) -> Dict[str, str]:
-        headers: Dict[str, str] = {
+    # ───────────────────── HTTP 层 ─────────────────────
+
+    def _headers(self, *, referer: bool = False, cookie: bool = False) -> dict[str, str]:
+        h: dict[str, str] = {
             "User-Agent": "Mozilla/5.0",
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "Connection": "keep-alive",
+            "Origin": "https://www.bilibili.com",
         }
-        headers["Origin"] = "https://www.bilibili.com"
-        if with_referer:
-            headers["Referer"] = "https://www.bilibili.com/"
-        if with_cookie and self.bili_cookie:
-            headers["Cookie"] = self.bili_cookie
-        return headers
-
-    def _subscription_count(self) -> int:
-        return sum(len(v) for v in self.subscriptions.values())
-
-    def _load_subscriptions(self) -> None:
-        try:
-            if not self.data_path.exists():
-                self.data_path.parent.mkdir(parents=True, exist_ok=True)
-                self.subscriptions = {}
-                return
-            raw = json.loads(self.data_path.read_text(encoding="utf-8"))
-            loaded: Dict[str, List[Subscription]] = {}
-            for session, items in (raw or {}).items():
-                if not isinstance(items, list):
-                    continue
-                normalized: List[Subscription] = []
-                for item in items:
-                    try:
-                        filter_types = item.get("filter_types") or []
-                        if not isinstance(filter_types, list):
-                            filter_types = []
-                        filter_types = [str(x).strip() for x in filter_types if str(x).strip() in VALID_FILTER_TYPES]
-
-                        filter_regex = item.get("filter_regex") or []
-                        if not isinstance(filter_regex, list):
-                            filter_regex = []
-                        filter_regex = [str(x).strip() for x in filter_regex if str(x).strip()]
-
-                        recent_ids = item.get("recent_ids") or []
-                        if not isinstance(recent_ids, list):
-                            recent_ids = []
-                        recent_ids = [str(x) for x in recent_ids if str(x)]
-
-                        normalized.append(
-                            Subscription(
-                                uid=int(item.get("uid")),
-                                last_dynamic_id=str(item.get("last_dynamic_id") or ""),
-                                is_live=bool(item.get("is_live", False)),
-                                filter_types=filter_types,
-                                filter_regex=filter_regex,
-                                recent_ids=recent_ids,
-                            )
-                        )
-                    except Exception:
-                        continue
-                loaded[str(session)] = normalized
-            self.subscriptions = loaded
-        except Exception as exc:
-            logger.error("加载订阅数据失败: %s", str(exc))
-            self.subscriptions = {}
-
-    def _save_subscriptions(self) -> None:
-        try:
-            self.data_path.parent.mkdir(parents=True, exist_ok=True)
-            dumped = {
-                session: [asdict(item) for item in items]
-                for session, items in self.subscriptions.items()
-                if items
-            }
-            self.data_path.write_text(
-                json.dumps(dumped, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-        except Exception as exc:
-            logger.error("保存订阅数据失败: %s", str(exc))
-
-    def _session_key(self, event: AstrMessageEvent) -> str:
-        value = getattr(event, "unified_msg_origin", None)
-        if value:
-            return str(value)
-        sender_id = event.get_sender_id()
-        return f"sender:{sender_id}"
+        if referer:
+            h["Referer"] = "https://www.bilibili.com/"
+        if cookie and self.bili_cookie:
+            h["Cookie"] = self.bili_cookie
+        return h
 
     @staticmethod
-    def _extract_links_and_ids(text: str) -> List[str]:
-        return extract_links_and_ids(text)
-
-    @staticmethod
-    def _extract_urls_from_text(text: str) -> List[str]:
-        if not text:
-            return []
-        return re.findall(r"https?://[^\s'\"<>]+", text)
-
-    def _coerce_json_payload(self, json_component: Any) -> Optional[dict]:
-        def unwrap(value: Any, depth: int = 0) -> Optional[dict]:
-            if depth > 5 or value is None:
-                return None
-            if isinstance(value, str):
-                stripped = value.strip()
-                if not stripped:
-                    return None
-                try:
-                    return unwrap(json.loads(stripped), depth + 1)
-                except Exception:
-                    return None
-            if isinstance(value, dict):
-                if "data" in value and len(value.keys()) == 1:
-                    return unwrap(value.get("data"), depth + 1)
-                return value
-            if isinstance(value, list):
-                for item in value:
-                    got = unwrap(item, depth + 1)
-                    if got:
-                        return got
-            if hasattr(value, "data"):
-                return unwrap(getattr(value, "data"), depth + 1)
-            return None
-
-        return unwrap(json_component)
-
-    def extract_links_from_json(self, json_component: Any) -> List[str]:
-        links: List[str] = []
-        try:
-            json_data = self._coerce_json_payload(json_component)
-            if not json_data:
-                return links
-
-            def walk(obj: Any) -> List[str]:
-                found: List[str] = []
-                if isinstance(obj, dict):
-                    for val in obj.values():
-                        if isinstance(val, str):
-                            found.extend(self._extract_urls_from_text(val))
-                        elif isinstance(val, (dict, list)):
-                            found.extend(walk(val))
-                elif isinstance(obj, list):
-                    for item in obj:
-                        if isinstance(item, str):
-                            found.extend(self._extract_urls_from_text(item))
-                        elif isinstance(item, (dict, list)):
-                            found.extend(walk(item))
-                return found
-
-            links.extend(walk(json_data))
-
-            meta = json_data.get("meta", {}) if isinstance(json_data, dict) else {}
-            detail_1 = meta.get("detail_1", {}) if isinstance(meta, dict) else {}
-            if isinstance(detail_1, dict):
-                for key in ("qqdocurl", "url", "desc"):
-                    val = detail_1.get(key)
-                    if isinstance(val, str):
-                        links.extend(self._extract_urls_from_text(val))
-
-            news = meta.get("news", {}) if isinstance(meta, dict) else {}
-            if isinstance(news, dict):
-                for key in ("jumpUrl", "url"):
-                    val = news.get(key)
-                    if isinstance(val, str):
-                        links.extend(self._extract_urls_from_text(val))
-        except Exception as exc:
-            logger.warning("解析 JSON 卡片失败: %s", str(exc))
-
-        return list(dict.fromkeys(links))
-
-    def _extract_json_links_from_event(self, event: AstrMessageEvent) -> List[str]:
-        links: List[str] = []
-        if not hasattr(event, "message_obj") or not hasattr(event.message_obj, "message"):
-            return links
-
-        for component in event.message_obj.message:
-            comp_payload: Any = component
-            is_json = False
-
-            if isinstance(component, dict):
-                comp_type = str(component.get("type") or "").lower()
-                if comp_type == "reply":
-                    continue
-                is_json = "json" in comp_type
-                comp_payload = component.get("data") or component
-            else:
-                if isinstance(component, Comp.Json):
-                    is_json = True
-                    comp_payload = getattr(component, "data", component)
-                else:
-                    comp_type = str(getattr(component, "type", "") or "").lower()
-                    is_json = "json" in comp_type
-                    if is_json and hasattr(component, "data"):
-                        comp_payload = getattr(component, "data")
-
-            if is_json:
-                links.extend(self.extract_links_from_json(comp_payload))
-
-        return list(dict.fromkeys(links))
-
-    async def _extract_video_ref_from_token(self, token: str) -> Dict[str, Any] | None:
-        current = token
-        if re.match(BILI_SHORT_LINK_PATTERN, token, re.IGNORECASE):
-            current = await self._resolve_short_url(token)
-
-        bvid_match = re.search(BILI_BV_PATTERN, current)
-        if bvid_match:
-            return {
-                "bvid": bvid_match.group(0),
-                "aid": None,
-                "source": token,
-                "page": self._parse_page_index(current),
-            }
-
-        avid_match = re.search(BILI_AV_PATTERN, current, re.IGNORECASE)
-        if avid_match:
-            return {
-                "bvid": None,
-                "aid": int(avid_match.group(0)[2:]),
-                "source": token,
-                "page": self._parse_page_index(current),
-            }
-        return None
-
-    async def _extract_video_ref_from_tokens(self, tokens: List[str]) -> Dict[str, Any] | None:
-        for token in tokens:
-            ref = await self._extract_video_ref_from_token(token)
-            if ref:
-                return ref
-        return None
-
-    async def _resolve_short_url(self, short_url: str) -> str:
-        result = await self._request_with_retry(
-            url=short_url,
-            method="GET",
-            headers=self._build_http_headers(with_referer=True, with_cookie=True),
-            read_body=False,
-            scene="resolve_short_url",
-        )
-        if not result:
-            return short_url
-        return str(result.get("final_url") or short_url)
-
-    @staticmethod
-    def _is_retryable_http_status(code: int) -> bool:
-        return code in {408, 425, 429, 500, 502, 503, 504}
-
-    def _classify_request_exception(self, exc: Exception) -> Tuple[str, bool]:
+    def _classify_exc(exc: Exception) -> tuple[str, bool]:
+        """分类异常 → (标签, 是否可重试)。"""
         if isinstance(exc, HTTPError):
             code = int(getattr(exc, "code", 0) or 0)
-            if 400 <= code < 500:
-                return f"http_client_{code}", self._is_retryable_http_status(code)
-            if code >= 500:
-                return f"http_server_{code}", self._is_retryable_http_status(code)
-            return f"http_{code}", self._is_retryable_http_status(code)
+            tag = "http_client" if 400 <= code < 500 else ("http_server" if code >= 500 else "http")
+            return f"{tag}_{code}", code in _RETRYABLE_HTTP
         if isinstance(exc, (TimeoutError, socket.timeout)):
             return "timeout", True
         if isinstance(exc, URLError):
             return "network", True
         return "unknown", False
 
-    async def _request_with_retry(
-        self,
-        *,
-        url: str,
-        method: str,
-        headers: Dict[str, str],
-        read_body: bool,
-        scene: str,
-    ) -> Optional[Dict[str, Any]]:
-        def _request_once() -> Dict[str, Any]:
+    async def _request(
+        self, *, url: str, method: str = "GET",
+        headers: dict[str, str], read_body: bool = True,
+        scene: str, silent_codes: set[int] | None = None,
+    ) -> dict[str, Any] | None:
+        def once() -> dict[str, Any]:
             req = Request(url, headers=headers, method=method)
-            with urlopen(req, timeout=self.timeout_seconds) as resp:
-                body = resp.read() if read_body else b""
+            with urlopen(req, timeout=self.timeout_seconds) as r:
                 return {
-                    "body": body,
-                    "headers": resp.headers,
-                    "status": int(getattr(resp, "status", 200) or 200),
-                    "final_url": str(resp.geturl()),
+                    "body": r.read() if read_body else b"",
+                    "headers": r.headers,
+                    "status": int(getattr(r, "status", 200) or 200),
+                    "final_url": str(r.geturl()),
                 }
 
-        max_attempts = self.http_retry_count + 1
-        for attempt in range(1, max_attempts + 1):
+        max_att = self.http_retry_count + 1
+        for att in range(1, max_att + 1):
             try:
-                return await asyncio.to_thread(_request_once)
+                return await asyncio.to_thread(once)
             except Exception as exc:
-                category, retryable = self._classify_request_exception(exc)
-                logger.warning(
-                    "请求失败[%s][%s] attempt %d/%d: %s",
-                    scene,
-                    category,
-                    attempt,
-                    max_attempts,
-                    str(exc),
-                )
-                if (not retryable) or attempt >= max_attempts:
+                if isinstance(exc, HTTPError):
+                    code = int(getattr(exc, "code", 0) or 0)
+                    if silent_codes and code in silent_codes:
+                        logger.info("请求静默降级[%s][http_%s]", scene, code)
+                        return None
+                cat, retryable = self._classify_exc(exc)
+                logger.warning("请求失败[%s][%s] %d/%d: %s", scene, cat, att, max_att, exc)
+                if not retryable or att >= max_att:
                     break
-                await asyncio.sleep(self.http_retry_delay_seconds * attempt)
+                await asyncio.sleep(self.http_retry_delay_seconds * att)
         return None
 
-    async def _http_get_json(self, base_url: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        query = urlencode(params, doseq=True)
-        full_url = f"{base_url}?{query}" if query else base_url
-        result = await self._request_with_retry(
-            url=full_url,
-            method="GET",
-            headers=self._build_http_headers(with_referer=True, with_cookie=True),
-            read_body=True,
-            scene="http_get_json",
+    async def _get_json(
+        self, base_url: str, params: dict[str, Any], *,
+        headers: dict[str, str] | None = None,
+        scene: str = "get_json",
+        silent_codes: set[int] | None = None,
+    ) -> dict[str, Any] | None:
+        qs = urlencode(params, doseq=True)
+        full = f"{base_url}?{qs}" if qs else base_url
+        result = await self._request(
+            url=full, headers=headers or self._headers(referer=True, cookie=True),
+            scene=scene, silent_codes=silent_codes,
         )
         if not result:
             return None
         try:
-            body = bytes(result.get("body") or b"").decode("utf-8", errors="ignore")
-            return json.loads(body)
+            return json.loads(bytes(result["body"]).decode("utf-8", errors="ignore"))
         except Exception as exc:
-            logger.warning("请求失败[http_get_json][json_decode]: %s", str(exc))
+            logger.warning("JSON 解析失败[%s]: %s", scene, exc)
             return None
 
-    async def _probe_content_length(self, url: str) -> Optional[int]:
-        result = await self._request_with_retry(
-            url=url,
-            method="HEAD",
-            headers=self._build_http_headers(with_referer=True, with_cookie=True),
-            read_body=False,
-            scene="probe_content_length",
-        )
-        if not result:
-            return None
+    async def _get_json_candidates(
+        self, base_url: str, params: dict[str, Any],
+        header_list: list[dict[str, str]], *,
+        scene: str, silent_codes: set[int] | None = None,
+    ) -> dict[str, Any] | None:
+        """尝试多组 headers 直到其中一组返回有效 payload。"""
+        for i, h in enumerate(header_list, 1):
+            payload = await self._get_json(
+                base_url, params, headers=h,
+                scene=f"{scene}_{i}", silent_codes=silent_codes,
+            )
+            if payload is not None:
+                return payload
+        return None
+
+    # ───────────────────── 订阅持久化 ─────────────────────
+
+    def _sub_count(self) -> int:
+        return sum(len(v) for v in self.subscriptions.values())
+
+    def _load_subscriptions(self) -> None:
+        if not self.data_path.exists():
+            self.data_path.parent.mkdir(parents=True, exist_ok=True)
+            self.subscriptions = {}
+            return
         try:
-            length = result.get("headers", {}).get("Content-Length")
-            if not length:
-                return None
-            return int(length)
-        except Exception:
-            return None
+            raw = json.loads(self.data_path.read_text(encoding="utf-8")) or {}
+        except Exception as exc:
+            logger.error("加载订阅数据失败: %s", exc)
+            self.subscriptions = {}
+            return
 
-    async def _download_file_with_limit(
-        self,
-        url: str,
-        save_path: Path,
-        max_bytes: int,
-    ) -> int:
-        def _download_once() -> int:
-            req = Request(url, headers=self._build_http_headers(with_referer=True, with_cookie=True))
-            total = 0
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            with urlopen(req, timeout=self.timeout_seconds) as resp:
-                with save_path.open("wb") as f:
-                    while True:
-                        chunk = resp.read(1024 * 256)
-                        if not chunk:
-                            break
-                        total += len(chunk)
-                        if max_bytes > 0 and total > max_bytes:
-                            raise ValueError("视频超过大小限制")
-                        f.write(chunk)
-            return total
-
-        max_attempts = self.http_retry_count + 1
-        for attempt in range(1, max_attempts + 1):
-            try:
-                return await asyncio.to_thread(_download_once)
-            except ValueError:
-                raise
-            except Exception as exc:
-                category, retryable = self._classify_request_exception(exc)
-                logger.warning(
-                    "请求失败[%s][%s] attempt %d/%d: %s",
-                    "download_video",
-                    category,
-                    attempt,
-                    max_attempts,
-                    str(exc),
-                )
+        loaded: dict[str, list[Subscription]] = {}
+        for session, items in raw.items():
+            if not isinstance(items, list):
+                continue
+            subs: list[Subscription] = []
+            for it in items:
                 try:
-                    save_path.unlink(missing_ok=True)
+                    ft_raw = it.get("filter_types") or []
+                    fr_raw = it.get("filter_regex") or []
+                    ri_raw = it.get("recent_ids") or []
+                    subs.append(Subscription(
+                        uid=int(it["uid"]),
+                        last_dynamic_id=str(it.get("last_dynamic_id") or ""),
+                        is_live=bool(it.get("is_live")),
+                        filter_types=[s for x in (ft_raw if isinstance(ft_raw, list) else [])
+                                      if (s := str(x).strip()) and s in VALID_FILTER_TYPES],
+                        filter_regex=[s for x in (fr_raw if isinstance(fr_raw, list) else [])
+                                      if (s := str(x).strip())],
+                        recent_ids=[str(x) for x in (ri_raw if isinstance(ri_raw, list) else []) if x],
+                    ))
                 except Exception:
-                    pass
-                if (not retryable) or attempt >= max_attempts:
-                    raise
-                await asyncio.sleep(self.http_retry_delay_seconds * attempt)
+                    continue
+            if subs:
+                loaded[str(session)] = subs
+        self.subscriptions = loaded
 
-        raise RuntimeError("下载失败")
+    def _save_subscriptions(self) -> None:
+        try:
+            self.data_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {s: [asdict(sub) for sub in lst] for s, lst in self.subscriptions.items() if lst}
+            self.data_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as exc:
+            logger.error("保存订阅数据失败: %s", exc)
+
+    def _session_key(self, event: AstrMessageEvent) -> str:
+        umo = getattr(event, "unified_msg_origin", None)
+        return str(umo) if umo else f"sender:{event.get_sender_id()}"
+
+    # ───────────────────── 链接解析工具 ─────────────────────
+
+    def _coerce_json(self, data: Any, _depth: int = 0) -> dict | None:
+        """递归解包 JSON 字符串/嵌套 data 字段，提取最终 dict。"""
+        if _depth > 5 or data is None:
+            return None
+        if isinstance(data, str):
+            s = data.strip()
+            if not s:
+                return None
+            try:
+                return self._coerce_json(json.loads(s), _depth + 1)
+            except Exception:
+                return None
+        if isinstance(data, dict):
+            if len(data) == 1 and "data" in data:
+                return self._coerce_json(data["data"], _depth + 1)
+            return data
+        if isinstance(data, list):
+            for item in data:
+                got = self._coerce_json(item, _depth + 1)
+                if got:
+                    return got
+        if hasattr(data, "data"):
+            return self._coerce_json(getattr(data, "data"), _depth + 1)
+        return None
+
+    def _extract_links_from_json(self, json_data: Any) -> list[str]:
+        """从 QQ 小程序 JSON 卡片中提取 URL。"""
+        payload = self._coerce_json(json_data)
+        if not payload:
+            return []
+
+        def walk(obj: Any) -> list[str]:
+            found: list[str] = []
+            if isinstance(obj, dict):
+                for v in obj.values():
+                    if isinstance(v, str):
+                        found.extend(RE_URL.findall(v))
+                    elif isinstance(v, (dict, list)):
+                        found.extend(walk(v))
+            elif isinstance(obj, list):
+                for item in obj:
+                    if isinstance(item, str):
+                        found.extend(RE_URL.findall(item))
+                    elif isinstance(item, (dict, list)):
+                        found.extend(walk(item))
+            return found
+
+        links = walk(payload)
+        # QQ 小程序特定字段快速提取
+        meta = payload.get("meta") or {}
+        if isinstance(meta, dict):
+            for sec in ("detail_1", "news"):
+                section = meta.get(sec) or {}
+                if isinstance(section, dict):
+                    for k in ("qqdocurl", "url", "desc", "jumpUrl"):
+                        v = section.get(k)
+                        if isinstance(v, str):
+                            links.extend(RE_URL.findall(v))
+        return list(dict.fromkeys(links))
+
+    def _extract_json_links_from_event(self, event: AstrMessageEvent) -> list[str]:
+        """从消息事件中提取 JSON 卡片里的链接。"""
+        msg_obj = getattr(event, "message_obj", None)
+        if not msg_obj or not hasattr(msg_obj, "message"):
+            return []
+        links: list[str] = []
+        for comp in msg_obj.message:
+            if isinstance(comp, dict):
+                if str(comp.get("type") or "").lower() == "reply":
+                    continue
+                is_json = "json" in str(comp.get("type") or "").lower()
+                payload = comp.get("data") or comp
+            elif isinstance(comp, Comp.Json):
+                is_json = True
+                payload = getattr(comp, "data", comp)
+            else:
+                is_json = "json" in str(getattr(comp, "type", "") or "").lower()
+                payload = getattr(comp, "data", comp) if is_json else comp
+            if is_json:
+                links.extend(self._extract_links_from_json(payload))
+        return list(dict.fromkeys(links))
+
+    async def _resolve_short_url(self, short_url: str) -> str:
+        result = await self._request(
+            url=short_url, headers=self._headers(referer=True, cookie=True),
+            read_body=False, scene="resolve_short_url",
+        )
+        return str(result.get("final_url") or short_url) if result else short_url
+
+    async def _extract_video_ref(self, token: str) -> dict[str, Any] | None:
+        """从单个链接/ID 提取视频引用信息。"""
+        current = token
+        if RE_SHORT_LINK.match(token):
+            current = await self._resolve_short_url(token)
+        m = RE_BV.search(current)
+        if m:
+            return {"bvid": m.group(0), "aid": None, "source": token, "page": parse_page_index(current)}
+        m = RE_AV.search(current)
+        if m:
+            return {"bvid": None, "aid": int(m.group(0)[2:]), "source": token, "page": parse_page_index(current)}
+        return None
+
+    async def _extract_video_ref_from_tokens(self, tokens: list[str]) -> dict[str, Any] | None:
+        for token in tokens:
+            ref = await self._extract_video_ref(token)
+            if ref:
+                return ref
+        return None
+
+    # ───────────────────── 视频信息 & 下载 ─────────────────────
+
+    async def _get_video_info(self, ref: dict[str, Any]) -> dict[str, Any] | None:
+        params: dict[str, Any] = {}
+        if ref.get("bvid"):
+            params["bvid"] = ref["bvid"]
+        elif ref.get("aid"):
+            params["aid"] = ref["aid"]
+        else:
+            return None
+        payload = await self._get_json(
+            "https://api.bilibili.com/x/web-interface/view", params, scene="video_info",
+        )
+        return payload.get("data") if payload and payload.get("code") == 0 else None
 
     @staticmethod
-    def _quality_candidates(label: str) -> List[int]:
+    def _quality_candidates(label: str) -> list[int]:
         selected = QUALITY_TO_QN.get(label.upper(), 64)
         levels = sorted(set(QUALITY_TO_QN.values()), reverse=True)
-        try:
-            start = levels.index(selected)
-        except ValueError:
-            start = levels.index(64)
-        return levels[start:]
+        idx = levels.index(selected) if selected in levels else levels.index(64)
+        return levels[idx:]
 
-    async def _fetch_playurl(
-        self,
-        *,
-        bvid: str,
-        cid: int,
-        qn: int,
-    ) -> Optional[Dict[str, Any]]:
-        params = {
-            "bvid": bvid,
-            "cid": cid,
-            "qn": qn,
-            "fnval": 0,
-            "fnver": 0,
-            "fourk": 1,
-        }
-        payload = await self._http_get_json("https://api.bilibili.com/x/player/playurl", params)
+    async def _fetch_playurl(self, *, bvid: str, cid: int, qn: int) -> dict[str, Any] | None:
+        payload = await self._get_json(
+            "https://api.bilibili.com/x/player/playurl",
+            {"bvid": bvid, "cid": cid, "qn": qn, "fnval": 0, "fnver": 0, "fourk": 1},
+            scene="playurl",
+        )
         if not payload or payload.get("code") != 0:
             return None
         data = payload.get("data") or {}
-
+        # durl 模式
         durl = data.get("durl") or []
-        if isinstance(durl, list) and durl:
-            first = durl[0] if isinstance(durl[0], dict) else {}
-            stream_url = str(first.get("url") or "").strip()
-            if stream_url:
-                return {
-                    "url": stream_url,
-                    "quality": int(data.get("quality") or qn),
-                }
-
-        dash = data.get("dash") or {}
+        if isinstance(durl, list) and durl and isinstance(durl[0], dict):
+            url = str(durl[0].get("url") or "").strip()
+            if url:
+                return {"url": url, "quality": int(data.get("quality") or qn)}
+        # dash 模式
+        dash = data.get("dash")
         videos = dash.get("video") if isinstance(dash, dict) else None
-        if isinstance(videos, list) and videos:
-            first = videos[0] if isinstance(videos[0], dict) else {}
-            stream_url = str(first.get("baseUrl") or first.get("base_url") or "").strip()
-            if stream_url:
-                return {
-                    "url": stream_url,
-                    "quality": int(first.get("id") or qn),
-                }
+        if isinstance(videos, list) and videos and isinstance(videos[0], dict):
+            url = str(videos[0].get("baseUrl") or videos[0].get("base_url") or "").strip()
+            if url:
+                return {"url": url, "quality": int(videos[0].get("id") or qn)}
         return None
 
-    async def _download_bili_video_file(self, ref: Dict[str, Any]) -> Tuple[Optional[Path], str]:
-        info = await self._get_video_info(ref)
+    async def _probe_content_length(self, url: str) -> int | None:
+        result = await self._request(
+            url=url, method="HEAD", headers=self._headers(referer=True, cookie=True),
+            read_body=False, scene="probe_size",
+        )
+        if not result:
+            return None
+        try:
+            cl = (result.get("headers") or {}).get("Content-Length")
+            return int(cl) if cl else None
+        except Exception:
+            return None
+
+    async def _download_file(self, url: str, save_path: Path, max_bytes: int) -> int:
+        def _do() -> int:
+            req = Request(url, headers=self._headers(referer=True, cookie=True))
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            total = 0
+            with urlopen(req, timeout=self.timeout_seconds) as resp, save_path.open("wb") as f:
+                while True:
+                    chunk = resp.read(256 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if max_bytes > 0 and total > max_bytes:
+                        raise ValueError("视频超过大小限制")
+                    f.write(chunk)
+            return total
+
+        max_att = self.http_retry_count + 1
+        for att in range(1, max_att + 1):
+            try:
+                return await asyncio.to_thread(_do)
+            except ValueError:
+                raise
+            except Exception as exc:
+                cat, retryable = self._classify_exc(exc)
+                logger.warning("下载失败[%s] %d/%d: %s", cat, att, max_att, exc)
+                try:
+                    save_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                if not retryable or att >= max_att:
+                    raise
+                await asyncio.sleep(self.http_retry_delay_seconds * att)
+        raise RuntimeError("下载失败")
+
+    async def _download_video(
+        self, ref: dict[str, Any], info: dict[str, Any] | None = None,
+    ) -> tuple[Path | None, str]:
+        """下载视频文件，返回 (保存路径, 错误信息)。"""
+        if info is None:
+            info = await self._get_video_info(ref)
         if not info:
             return None, "获取视频信息失败"
 
@@ -628,9 +532,9 @@ class BiliAllPlugin(Star):
             return None, "无法识别 bvid"
 
         pages = info.get("pages") or []
-        page_count = len(pages) if pages else 1
-        page_index = min(int(ref.get("page", 0) or 0), max(page_count - 1, 0))
-        page = pages[page_index] if pages and page_index < len(pages) else {}
+        page_count = max(len(pages), 1)
+        page_idx = min(int(ref.get("page", 0) or 0), page_count - 1)
+        page = pages[page_idx] if pages and page_idx < len(pages) else {}
         cid = int(page.get("cid") or 0)
         if cid <= 0:
             return None, "无法识别 cid"
@@ -639,74 +543,65 @@ class BiliAllPlugin(Star):
         if self.video_max_duration_seconds > 0 and duration > self.video_max_duration_seconds:
             return None, f"视频时长超过限制({duration}s > {self.video_max_duration_seconds}s)"
 
-        stream_info: Optional[Dict[str, Any]] = None
+        stream: dict[str, Any] | None = None
         for qn in self._quality_candidates(self.video_quality_label):
-            stream_info = await self._fetch_playurl(bvid=bvid, cid=cid, qn=qn)
-            if stream_info:
+            stream = await self._fetch_playurl(bvid=bvid, cid=cid, qn=qn)
+            if stream:
                 break
-        if not stream_info:
+        if not stream:
             return None, "未获取到可下载的视频流"
-
-        stream_url = str(stream_info.get("url") or "").strip()
+        stream_url = str(stream.get("url") or "").strip()
         if not stream_url:
             return None, "视频流地址为空"
 
         max_bytes = self.video_max_size_mb * 1024 * 1024 if self.video_max_size_mb > 0 else 0
         if max_bytes > 0:
-            content_len = await self._probe_content_length(stream_url)
-            if content_len and content_len > max_bytes:
-                return None, f"视频大小超过限制({content_len / 1024 / 1024:.1f}MB > {self.video_max_size_mb}MB)"
+            cl = await self._probe_content_length(stream_url)
+            if cl and cl > max_bytes:
+                return None, f"视频大小超过限制({cl / 1024 / 1024:.1f}MB > {self.video_max_size_mb}MB)"
 
-        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = self.video_cache_dir / f"{bvid}_p{page_index + 1}_{now}.mp4"
-
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = self.video_cache_dir / f"{bvid}_p{page_idx + 1}_{ts}.mp4"
         try:
-            real_size = await self._download_file_with_limit(
-                stream_url,
-                save_path,
-                max_bytes=max_bytes,
-            )
-            if real_size <= 0 or not save_path.exists():
+            size = await self._download_file(stream_url, save_path, max_bytes)
+            if size <= 0 or not save_path.exists():
                 return None, "下载结果为空"
             return save_path, ""
         except ValueError as exc:
-            try:
-                save_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            save_path.unlink(missing_ok=True)
             return None, str(exc)
         except Exception as exc:
-            try:
-                save_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            save_path.unlink(missing_ok=True)
             return None, f"下载失败: {exc}"
 
-    async def _send_downloaded_video(self, event: AstrMessageEvent, ref: Dict[str, Any]) -> None:
+    async def _send_video_download(
+        self, event: AstrMessageEvent, ref: dict[str, Any],
+        info: dict[str, Any] | None = None,
+    ) -> None:
+        """可选的视频下载并发送（仅 enable_video_download=True 时生效）。"""
         if not self.enable_video_download:
             return
-
-        video_path: Optional[Path] = None
+        video_path: Path | None = None
         try:
-            video_path, err = await self._download_bili_video_file(ref)
+            video_path, err = await self._download_video(ref, info)
             if not video_path:
                 if err:
                     await self.context.send_message(
                         event.unified_msg_origin,
-                        MessageEventResult(chain=[Comp.Plain(f"⚠️ {err}")]),
+                        MessageEventResult(chain=[Comp.Plain(f"[Warning] {err}")]),
                     )
                 return
-
-            chain = [Comp.Plain("📦 已下载并发送视频文件"), Comp.Video.fromFileSystem(str(video_path.resolve()))]
             await self.context.send_message(
                 event.unified_msg_origin,
-                MessageEventResult(chain=chain),
+                MessageEventResult(chain=[
+                    Comp.Video.fromFileSystem(str(video_path.resolve())),
+                ]),
             )
         except Exception as exc:
-            logger.warning("发送下载视频失败: %s", str(exc))
+            logger.warning("发送下载视频失败: %s", exc)
             await self.context.send_message(
                 event.unified_msg_origin,
-                MessageEventResult(chain=[Comp.Plain(f"⚠️ 视频发送失败: {exc}")]),
+                MessageEventResult(chain=[Comp.Plain(f"[Warning] 视频发送失败: {exc}")]),
             )
         finally:
             if self.video_auto_delete and video_path and video_path.exists():
@@ -715,190 +610,90 @@ class BiliAllPlugin(Star):
                 except Exception:
                     pass
 
-    @staticmethod
-    def _parse_page_index(url_or_text: str) -> int:
-        return parse_page_index(url_or_text)
+    # ───────────────────── 动态 & 直播 ─────────────────────
 
-    async def _get_video_info(self, ref: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        params = {}
-        if ref.get("bvid"):
-            params["bvid"] = ref["bvid"]
-        elif ref.get("aid"):
-            params["aid"] = ref["aid"]
-        else:
-            return None
-
-        url = "https://api.bilibili.com/x/web-interface/view"
-        payload = await self._http_get_json(url, params)
-        if not payload:
-            return None
-
-        if payload.get("code") != 0:
-            return None
-        return payload.get("data")
-
-    async def _fetch_latest_dynamic(self, uid: int) -> Optional[Dict[str, Any]]:
-        items = await self._fetch_dynamic_items(uid)
-        if not items:
-            return None
-        return items[0]
-
-    async def _fetch_dynamic_items(self, uid: int) -> List[Dict[str, Any]]:
-        url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space"
-        params = {"host_mid": uid}
-        payload = await self._http_get_json(url, params)
-        if payload and payload.get("code") == 0:
-            items = payload.get("data", {}).get("items") or []
-            normalized = [item for item in items if isinstance(item, dict) and item.get("id_str")]
-            if normalized:
-                return normalized
-
-        fallback_items = await self._fetch_dynamic_items_fallback(uid)
-        if fallback_items:
-            logger.info("动态接口已切换兜底模式 uid=%s items=%d", uid, len(fallback_items))
-        return fallback_items
-
-    @staticmethod
-    def _map_legacy_dynamic_type(type_id: int) -> str:
-        if type_id == 1:
-            return "DYNAMIC_TYPE_FORWARD"
-        if type_id in (2, 4):
-            return "DYNAMIC_TYPE_DRAW"
-        if type_id == 8:
-            return "DYNAMIC_TYPE_AV"
-        if type_id == 64:
-            return "DYNAMIC_TYPE_ARTICLE"
-        return "DYNAMIC_TYPE_WORD"
-
-    @staticmethod
-    def _extract_legacy_dynamic_text(card_obj: Dict[str, Any]) -> str:
-        if not isinstance(card_obj, dict):
-            return ""
-
-        item = card_obj.get("item") or {}
-        if isinstance(item, dict):
-            text = item.get("content") or item.get("description") or ""
-            if isinstance(text, str) and text.strip():
-                return text.strip()
-
-        for key in ("dynamic", "title", "desc"):
-            val = card_obj.get(key)
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-        return ""
-
-    @staticmethod
-    def _extract_legacy_uname(desc_obj: Dict[str, Any], card_obj: Dict[str, Any]) -> str:
-        profile = desc_obj.get("user_profile") or {}
-        info = profile.get("info") if isinstance(profile, dict) else {}
-        uname = info.get("uname") if isinstance(info, dict) else ""
-        if isinstance(uname, str) and uname.strip():
-            return uname.strip()
-
-        user = card_obj.get("user") or {}
-        name = user.get("name") if isinstance(user, dict) else ""
-        if isinstance(name, str) and name.strip():
-            return name.strip()
-        return "未知UP"
-
-    async def _fetch_dynamic_items_fallback(self, uid: int) -> List[Dict[str, Any]]:
-        url = "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/space_history"
-        params = {"host_uid": uid, "offset_dynamic_id": 0, "need_top": 1}
-        payload = await self._http_get_json(url, params)
+    async def _fetch_dynamic_items(self, uid: int) -> list[dict[str, Any]]:
+        payload = await self._get_json_candidates(
+            "https://api.bilibili.com/x/polymer/web-dynamic/desktop/v1/feed/space",
+            {"host_mid": uid, "timezone_offset": -480},
+            [self._headers(referer=True), self._headers(referer=True, cookie=True)],
+            scene="fetch_dynamic", silent_codes={412},
+        )
         if not payload or payload.get("code") != 0:
             return []
-
-        cards = payload.get("data", {}).get("cards") or []
-        if not isinstance(cards, list):
-            return []
-
-        items: List[Dict[str, Any]] = []
-        for raw in cards:
-            if not isinstance(raw, dict):
-                continue
-            desc_obj = raw.get("desc") if isinstance(raw.get("desc"), dict) else {}
-            dyn_id = str(desc_obj.get("dynamic_id_str") or desc_obj.get("dynamic_id") or "").strip()
-            if not dyn_id:
-                continue
-
-            card_obj: Dict[str, Any] = {}
-            card_raw = raw.get("card")
-            if isinstance(card_raw, str) and card_raw.strip():
-                try:
-                    parsed = json.loads(card_raw)
-                    if isinstance(parsed, dict):
-                        card_obj = parsed
-                except Exception:
-                    card_obj = {}
-
-            type_id = int(desc_obj.get("type") or 0)
-            text = self._extract_legacy_dynamic_text(card_obj)
-            uname = self._extract_legacy_uname(desc_obj, card_obj)
-
-            items.append(
-                {
-                    "id_str": dyn_id,
-                    "type": self._map_legacy_dynamic_type(type_id),
-                    "modules": {
-                        "module_author": {"name": uname},
-                        "module_dynamic": {"desc": {"text": text}},
-                    },
-                }
-            )
-
+        items = [
+            it for it in (payload.get("data", {}).get("items") or [])
+            if isinstance(it, dict) and it.get("id_str")
+        ]
+        for it in items:
+            normalize_modules(it)
         return items
 
-    async def _fetch_live_status(self, uid: int) -> Optional[Dict[str, Any]]:
-        url = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids"
-        params = {"uids[]": uid}
-        payload = await self._http_get_json(url, params)
-        if not payload:
+    async def _fetch_live_status(self, uid: int) -> dict[str, Any] | None:
+        payload = await self._get_json(
+            "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids",
+            {"uids[]": uid}, scene="live_status",
+        )
+        if payload and payload.get("code") == 0:
+            data = payload.get("data") or {}
+            if isinstance(data, dict):
+                row = data.get(str(uid))
+                if isinstance(row, dict):
+                    return row
+        # 兜底
+        return await self._fetch_live_room(uid)
+
+    async def _fetch_live_room(self, uid: int) -> dict[str, Any] | None:
+        payload = await self._get_json(
+            "https://api.live.bilibili.com/room/v1/Room/getRoomInfoOld",
+            {"mid": uid}, scene="live_room",
+        )
+        if not payload or payload.get("code") != 0:
             return None
-
-        if payload.get("code") != 0:
+        d = payload.get("data") or {}
+        if not isinstance(d, dict):
             return None
-        data = payload.get("data") or {}
-        return data.get(str(uid))
+        return {
+            "uid": uid,
+            "uname": d.get("uname") or f"UID {uid}",
+            "room_id": d.get("roomid") or 0,
+            "title": d.get("title") or "",
+            "live_status": int(d.get("liveStatus") or 0),
+        }
 
-    def _build_dynamic_chain(self, item: Dict[str, Any]) -> List[object]:
-        return build_dynamic_chain(item)
+    # ───────────────────── 订阅处理 ─────────────────────
 
-    @staticmethod
-    def _is_top_dynamic(item: Dict[str, Any]) -> bool:
-        return is_top_dynamic(item)
+    def _upsert_subscription(
+        self, session: str, uid: int,
+        filter_types: list[str], filter_regex: list[str],
+        latest_dyn_id: str = "",
+    ) -> tuple[Subscription, bool]:
+        subs = self.subscriptions.setdefault(session, [])
+        for sub in subs:
+            if sub.uid == uid:
+                sub.filter_types = filter_types
+                sub.filter_regex = filter_regex
+                return sub, True
+        new = Subscription(
+            uid=uid, last_dynamic_id=latest_dyn_id,
+            filter_types=filter_types, filter_regex=filter_regex,
+        )
+        subs.append(new)
+        return new, False
 
-    def _should_filter_dynamic(self, item: Dict[str, Any], sub: Subscription) -> bool:
-        return should_filter_dynamic(item, sub)
-
-    @staticmethod
-    def _parse_filter_args(args: List[str]) -> Tuple[List[str], List[str]]:
-        return parse_filter_args(args, VALID_FILTER_TYPES)
-
-    def _append_recent_id(self, sub: Subscription, dyn_id: str) -> None:
-        append_recent_id(sub, dyn_id, self.recent_ids_limit)
-
-    def _build_uid_targets(self) -> Dict[int, List[Tuple[str, Subscription]]]:
-        return build_uid_targets(self.subscriptions)
-
-    async def _process_single_subscription(
-        self,
-        session: str,
-        sub: Subscription,
-        dynamic_items: List[Dict[str, Any]],
-        live_info: Optional[Dict[str, Any]],
+    async def _process_sub(
+        self, session: str, sub: Subscription,
+        dyn_items: list[dict[str, Any]], live_info: dict[str, Any] | None,
     ) -> bool:
         changed = False
-        known_ids = {sub.last_dynamic_id, *(sub.recent_ids or [])}
-        known_ids.discard("")
+        known = {sub.last_dynamic_id, *(sub.recent_ids or [])} - {""}
 
-        new_items: List[Dict[str, Any]] = []
-        for item in dynamic_items:
-            if self._is_top_dynamic(item):
+        new_items: list[dict[str, Any]] = []
+        for item in dyn_items:
+            if is_top_dynamic(item):
                 continue
             dyn_id = str(item.get("id_str") or "")
-            if not dyn_id:
-                continue
-            if dyn_id in known_ids:
+            if not dyn_id or dyn_id in known:
                 break
             new_items.append(item)
 
@@ -907,63 +702,86 @@ class BiliAllPlugin(Star):
             dyn_id = str(item.get("id_str") or "")
             if not dyn_id:
                 continue
-
-            if not self._should_filter_dynamic(item, sub) and sent < self.dynamic_limit:
-                sent += 1
-                chain = self._build_dynamic_chain(item)
+            if not should_filter_dynamic(item, sub) and sent < self.dynamic_limit:
                 await self.context.send_message(
-                    session,
-                    MessageEventResult(chain=chain),
+                    session, MessageEventResult(chain=build_dynamic_chain(item)),
                 )
-
+                sent += 1
             sub.last_dynamic_id = dyn_id
-            self._append_recent_id(sub, dyn_id)
+            append_recent_id(sub, dyn_id, self.recent_ids_limit)
             changed = True
 
+        # 直播状态变更
         if live_info and "live" not in set(sub.filter_types or []):
-            live_status = int(live_info.get("live_status") or 0)
-            now_live = live_status == 1
+            now_live = int(live_info.get("live_status") or 0) == 1
             if now_live != sub.is_live:
                 sub.is_live = now_live
                 changed = True
                 uname = live_info.get("uname") or f"UID {sub.uid}"
                 if now_live:
                     title = live_info.get("title") or ""
-                    room_id = live_info.get("room_id") or ""
-                    link = f"https://live.bilibili.com/{room_id}" if room_id else ""
-                    msg = f"🔴 {uname} 开播了\n{title}".strip()
+                    room = live_info.get("room_id") or ""
+                    link = f"https://live.bilibili.com/{room}" if room else ""
+                    msg = f"[LIVE] {uname} 开播了\n{title}".strip()
                     if link:
-                        msg = msg + f"\n{link}"
+                        msg += f"\n{link}"
                 else:
-                    msg = f"⚪ {uname} 下播了"
-                await self.context.send_message(
-                    session, MessageEventResult().message(msg)
-                )
-
+                    msg = f"[OFFLINE] {uname} 下播了"
+                await self.context.send_message(session, MessageEventResult().message(msg))
         return changed
 
+    async def _poll_loop(self):
+        while self._running:
+            try:
+                t0 = time.monotonic()
+                changed = False
+                uid_targets = build_uid_targets(self.subscriptions)
+                for uid, targets in uid_targets.items():
+                    dyn_res, live_res = await asyncio.gather(
+                        self._fetch_dynamic_items(uid),
+                        self._fetch_live_status(uid),
+                        return_exceptions=True,
+                    )
+                    dyn_items = dyn_res if isinstance(dyn_res, list) else []
+                    live = live_res if isinstance(live_res, dict) else None
+                    if isinstance(dyn_res, Exception):
+                        logger.warning("拉取动态失败 uid=%s: %s", uid, dyn_res)
+                    if isinstance(live_res, Exception):
+                        logger.warning("拉取直播状态失败 uid=%s: %s", uid, live_res)
+                    for sess, sub in targets:
+                        if await self._process_sub(sess, sub, dyn_items, live):
+                            changed = True
+                    if self.uid_task_gap_seconds > 0:
+                        await asyncio.sleep(self.uid_task_gap_seconds)
+
+                if changed:
+                    self._save_subscriptions()
+                await asyncio.sleep(max(0.0, self.poll_interval_seconds - (time.monotonic() - t0)))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("订阅轮询异常: %s", exc)
+                await asyncio.sleep(5)
+
+    # ───────────────────── 状态自检 ─────────────────────
+
     def _is_admin(self, event: AstrMessageEvent) -> bool:
-        sender_id = str(event.get_sender_id())
-        return sender_id in self.admin_ids
+        return str(event.get_sender_id()) in self.admin_ids
 
-    def _validate_state_config(self) -> Tuple[List[str], List[str]]:
-        errors: List[str] = []
-        warnings: List[str] = []
-
+    def _validate_config(self) -> tuple[list[str], list[str]]:
+        errors: list[str] = []
+        warnings: list[str] = []
         if self.video_quality_label not in QUALITY_TO_QN:
             errors.append(f"video_download.quality 非法: {self.video_quality_label}")
-
-        if self.poll_interval_seconds <= 0:
-            errors.append("subscription.poll_interval_seconds 必须 > 0")
-        if self.timeout_seconds <= 0:
-            errors.append("subscription.timeout_seconds 必须 > 0")
-        if self.dynamic_limit <= 0:
-            errors.append("subscription.dynamic_limit 必须 > 0")
-        if self.video_max_duration_seconds <= 0:
-            errors.append("video_download.max_duration_seconds 必须 > 0")
-        if self.video_max_size_mb <= 0:
-            errors.append("video_download.max_size_mb 必须 > 0")
-
+        for attr, label in (
+            ("poll_interval_seconds", "subscription.poll_interval_seconds"),
+            ("timeout_seconds", "subscription.timeout_seconds"),
+            ("dynamic_limit", "subscription.dynamic_limit"),
+            ("video_max_duration_seconds", "video_download.max_duration_seconds"),
+            ("video_max_size_mb", "video_download.max_size_mb"),
+        ):
+            if getattr(self, attr, 0) <= 0:
+                errors.append(f"{label} 必须 > 0")
         qn = QUALITY_TO_QN.get(self.video_quality_label, 64)
         if self.enable_video_download and qn >= 80 and not self.bili_cookie:
             warnings.append("已启用高画质下载但未填写 Cookie，可能无法获取 1080P 及以上")
@@ -971,366 +789,253 @@ class BiliAllPlugin(Star):
             warnings.append("Cookie 中未检测到 SESSDATA，登录态可能无效")
         return errors, warnings
 
-    async def _check_cookie_state(self) -> Tuple[str, str]:
-        payload = await self._http_get_json("https://api.bilibili.com/x/web-interface/nav", {})
+    async def _check_cookie(self) -> tuple[str, str]:
+        payload = await self._get_json(
+            "https://api.bilibili.com/x/web-interface/nav", {}, scene="nav",
+        )
         if not payload:
             return "fail", "请求 nav 接口失败（网络或超时）"
         if payload.get("code") != 0:
             return "fail", f"nav 接口返回错误 code={payload.get('code')}"
-
         data = payload.get("data") or {}
-        is_login = bool(data.get("isLogin"))
+        logged_in = bool(data.get("isLogin"))
         uname = str(data.get("uname") or "")
-
         if self.bili_cookie:
-            if is_login:
+            if logged_in:
                 return "ok", f"Cookie 有效，当前登录账号: {uname or '未知'}"
             return "fail", "已填写 Cookie 但未登录，Cookie 可能失效"
-
-        if is_login:
+        if logged_in:
             return "warn", f"未配置 Cookie，但环境已有登录态: {uname or '未知'}"
         return "warn", "未配置 Cookie，下载画质可能受限"
 
-    async def _check_subscription_state(self, current_session: str) -> Tuple[str, str]:
-        total_sessions = len(self.subscriptions)
-        total_subs = self._subscription_count()
+    async def _check_subscription(self, session: str) -> tuple[str, str]:
+        total = self._sub_count()
         loop_ok = bool(self._running and self._poll_task and not self._poll_task.done())
+        loop_msg = "轮询任务运行中" if loop_ok else "轮询任务未运行"
 
-        test_uid: Optional[int] = None
-        session_subs = self.subscriptions.get(current_session, [])
-        if session_subs:
-            test_uid = session_subs[0].uid
-        elif self.subscriptions:
-            first_items = next(iter(self.subscriptions.values()), [])
-            if first_items:
-                test_uid = first_items[0].uid
-
+        test_uid: int | None = None
+        for subs in (self.subscriptions.get(session, []),
+                     *(self.subscriptions.values() if self.subscriptions else [])):
+            if subs:
+                test_uid = subs[0].uid
+                break
         if not test_uid:
-            loop_msg = "轮询任务运行中" if loop_ok else "轮询任务未运行"
-            return "warn", f"当前无订阅数据（sessions={total_sessions}, subs={total_subs}，{loop_msg}）"
+            return "warn", f"当前无订阅数据（sessions={len(self.subscriptions)}, subs={total}，{loop_msg}）"
 
         items = await self._fetch_dynamic_items(test_uid)
         live = await self._fetch_live_status(test_uid)
         if not items and live is None:
             return "fail", f"订阅拉取失败：UID {test_uid} 的动态与直播接口均无响应"
-
-        loop_msg = "轮询任务运行中" if loop_ok else "轮询任务未运行"
         return (
             "ok" if loop_ok else "warn",
-            f"订阅可用：UID {test_uid} 动态{len(items)}条，直播状态{'可用' if live is not None else '不可用'}（{loop_msg}）",
+            f"订阅可用：UID {test_uid} 动态{len(items)}条，直播{'可用' if live else '不可用'}（{loop_msg}）",
         )
+
+    # ───────────────────── 指令：公共辅助 ─────────────────────
+
+    @staticmethod
+    def _parse_uid_args(args: list[str], uid_pos: int = 1) -> tuple[int, list[str], list[str]] | None:
+        """从命令参数提取 (uid, filter_types, filter_regex)，失败返回 None。"""
+        uid_str = args[uid_pos] if len(args) > uid_pos else ""
+        if not uid_str.isdigit():
+            return None
+        ft, fr = parse_filter_args(args[uid_pos + 1:], VALID_FILTER_TYPES)
+        return int(uid_str), ft, fr
+
+    @staticmethod
+    def _fmt_filter(ft: list[str], fr: list[str]) -> str:
+        parts: list[str] = []
+        if ft:
+            parts.append("类型过滤: " + ", ".join(ft))
+        if fr:
+            parts.append("正则过滤: " + ", ".join(fr))
+        return ("\n" + "\n".join(parts)) if parts else ""
+
+    @staticmethod
+    def _fmt_sub(sub: Subscription) -> str:
+        parts: list[str] = []
+        if sub.filter_types:
+            parts.append("types=" + ",".join(sub.filter_types))
+        if sub.filter_regex:
+            parts.append("regex=" + ",".join(sub.filter_regex))
+        return f" ({'; '.join(parts)})" if parts else ""
+
+    # ───────────────────── 指令：自检 ─────────────────────
 
     @filter.command("bili_state")
     async def cmd_bili_state(self, event: AstrMessageEvent):
-        """插件状态自检。用法：/bili_state"""
+        """插件状态自检。"""
         self._refresh_config()
-
-        errors, warnings = self._validate_state_config()
-        lines: List[str] = ["🔎 bili_state 自检结果"]
+        errors, warnings = self._validate_config()
+        lines: list[str] = ["bili_state 自检结果"]
 
         if errors:
-            lines.append("\n❌ 配置检查未通过：")
-            for item in errors:
-                lines.append(f"- {item}")
+            lines.append("\n[FAIL] 配置检查未通过：")
+            lines.extend(f"- {e}" for e in errors)
             if warnings:
-                lines.append("\n⚠️ 配置警告：")
-                for item in warnings:
-                    lines.append(f"- {item}")
+                lines.append("\n[WARN] 配置警告：")
+                lines.extend(f"- {w}" for w in warnings)
             lines.append("\n请先修复配置后再执行 /bili_state。")
             yield event.plain_result("\n".join(lines))
             return
 
-        lines.append("\n✅ 配置检查通过")
+        lines.append("\n[OK] 配置检查通过")
         if warnings:
-            lines.append("⚠️ 配置警告：")
-            for item in warnings:
-                lines.append(f"- {item}")
+            lines.append("[WARN] 配置警告：")
+            lines.extend(f"- {w}" for w in warnings)
 
-        cookie_status, cookie_msg = await self._check_cookie_state()
-        cookie_prefix = "✅" if cookie_status == "ok" else ("⚠️" if cookie_status == "warn" else "❌")
-        lines.append(f"\n{cookie_prefix} Cookie检查：{cookie_msg}")
+        icon = lambda s: {"ok": "[OK]", "warn": "[WARN]"}.get(s, "[FAIL]")  # noqa: E731
+        cs, cm = await self._check_cookie()
+        lines.append(f"\n{icon(cs)} Cookie检查：{cm}")
+        ss, sm = await self._check_subscription(self._session_key(event))
+        lines.append(f"{icon(ss)} 订阅检查：{sm}")
 
-        session = self._session_key(event)
-        sub_status, sub_msg = await self._check_subscription_state(session)
-        sub_prefix = "✅" if sub_status == "ok" else ("⚠️" if sub_status == "warn" else "❌")
-        lines.append(f"{sub_prefix} 订阅检查：{sub_msg}")
+        lines.append("\n功能开关：")
+        lines.extend([
+            f"- 链接解析: {'开启' if self.enable_bili_parse else '关闭'}",
+            f"- 下载发送: {'开启' if self.enable_video_download else '关闭'}",
+            f"- 下载画质: {self.video_quality_label}",
+            f"- 时长上限: {self.video_max_duration_seconds}s",
+            f"- 大小上限: {self.video_max_size_mb}MB",
+            f"- 自动删缓存: {'是' if self.video_auto_delete else '否'}",
+        ])
 
-        lines.append("\n🧩 功能开关：")
-        lines.append(f"- 链接解析: {'开启' if self.enable_bili_parse else '关闭'}")
-        lines.append(f"- 下载发送: {'开启' if self.enable_video_download else '关闭'}")
-        lines.append(f"- 下载画质: {self.video_quality_label}")
-        lines.append(f"- 时长上限: {self.video_max_duration_seconds}s")
-        lines.append(f"- 大小上限: {self.video_max_size_mb}MB")
-        lines.append(f"- 自动删缓存: {'是' if self.video_auto_delete else '否'}")
-
-        final = "ok"
-        if cookie_status == "fail" or sub_status == "fail":
-            final = "fail"
-        elif cookie_status == "warn" or sub_status == "warn" or bool(warnings):
-            final = "warn"
-
-        if final == "ok":
-            lines.append("\n🎉 自检通过：核心功能可用。")
-        elif final == "warn":
-            lines.append("\n⚠️ 自检完成：存在警告，请按提示优化配置。")
-        else:
-            lines.append("\n❌ 自检完成：存在失败项，请按提示修复。")
-
+        final = "fail" if "fail" in (cs, ss) else ("warn" if "warn" in (cs, ss) or warnings else "ok")
+        tail = {
+            "ok": "\n自检通过：核心功能可用。",
+            "warn": "\n自检完成：存在警告，请按提示优化配置。",
+        }
+        lines.append(tail.get(final, "\n自检完成：存在失败项，请按提示修复。"))
         yield event.plain_result("\n".join(lines))
 
-    def _upsert_subscription(
-        self,
-        session: str,
-        uid: int,
-        filter_types: List[str],
-        filter_regex: List[str],
-        latest_dyn_id: str = "",
-    ) -> Tuple[Subscription, bool]:
-        subs = self.subscriptions.setdefault(session, [])
-        for sub in subs:
-            if sub.uid == uid:
-                sub.filter_types = filter_types
-                sub.filter_regex = filter_regex
-                return sub, True
-
-        new_sub = Subscription(
-            uid=uid,
-            last_dynamic_id=latest_dyn_id,
-            is_live=False,
-            filter_types=filter_types,
-            filter_regex=filter_regex,
-            recent_ids=[],
-        )
-        subs.append(new_sub)
-        return new_sub, False
-
-    async def _poll_loop(self):
-        while self._running:
-            try:
-                changed = False
-                uid_targets = self._build_uid_targets()
-                for uid, targets in uid_targets.items():
-                    dynamic_result, live_result = await asyncio.gather(
-                        self._fetch_dynamic_items(uid),
-                        self._fetch_live_status(uid),
-                        return_exceptions=True,
-                    )
-
-                    if isinstance(dynamic_result, Exception):
-                        logger.warning("拉取动态失败 uid=%s: %s", uid, str(dynamic_result))
-                        dynamic_items: List[Dict[str, Any]] = []
-                    else:
-                        dynamic_items = dynamic_result
-
-                    if isinstance(live_result, Exception):
-                        logger.warning("拉取直播状态失败 uid=%s: %s", uid, str(live_result))
-                        live: Optional[Dict[str, Any]] = None
-                    else:
-                        live = live_result
-
-                    for session, sub in targets:
-                        if await self._process_single_subscription(
-                            session=session,
-                            sub=sub,
-                            dynamic_items=dynamic_items,
-                            live_info=live,
-                        ):
-                            changed = True
-
-                    await asyncio.sleep(self.uid_task_gap_seconds)
-
-                if changed:
-                    self._save_subscriptions()
-                await asyncio.sleep(self.poll_interval_seconds)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.error("订阅轮询异常: %s", str(exc))
-                await asyncio.sleep(5)
+    # ───────────────────── 指令：订阅管理 ─────────────────────
 
     @filter.command("bili_sub")
     async def cmd_bili_sub(self, event: AstrMessageEvent):
-        """订阅指定UID的UP主动态。用法：/bili_sub 123456 [过滤器...]"""
-        args = (event.message_str or "").split()
-        uid = args[1] if len(args) >= 2 else ""
-        if not uid.isdigit():
+        """订阅UP主动态。用法：/bili_sub <UID> [过滤器...]"""
+        parsed = self._parse_uid_args((event.message_str or "").split())
+        if not parsed:
             yield event.plain_result("参数错误。用法：/bili_sub <B站UID> [过滤器...]")
             return
-
+        uid, ft, fr = parsed
         session = self._session_key(event)
-        uid_int = int(uid)
-        filter_types, filter_regex = self._parse_filter_args(args[2:])
-
-        latest = await self._fetch_latest_dynamic(uid_int)
-        last_id = str(latest.get("id_str") or "") if latest else ""
-        _, exists = self._upsert_subscription(
-            session=session,
-            uid=uid_int,
-            filter_types=filter_types,
-            filter_regex=filter_regex,
-            latest_dyn_id=last_id,
-        )
+        items = await self._fetch_dynamic_items(uid)
+        last_id = str(items[0].get("id_str") or "") if items else ""
+        _, exists = self._upsert_subscription(session, uid, ft, fr, last_id)
         self._save_subscriptions()
-
-        details: List[str] = []
-        if filter_types:
-            details.append("类型过滤: " + ", ".join(filter_types))
-        if filter_regex:
-            details.append("正则过滤: " + ", ".join(filter_regex))
-        suffix = ("\n" + "\n".join(details)) if details else ""
+        detail = self._fmt_filter(ft, fr)
         if exists:
-            yield event.plain_result(f"该 UID 已订阅，已更新过滤条件：{uid_int}{suffix}")
+            yield event.plain_result(f"该 UID 已订阅，已更新过滤条件：{uid}{detail}")
         else:
-            yield event.plain_result(f"订阅成功：UID {uid_int}{suffix}")
+            yield event.plain_result(f"订阅成功：UID {uid}{detail}")
 
     @filter.command("bili_sub_del")
     async def cmd_bili_sub_del(self, event: AstrMessageEvent):
-        """取消订阅。用法：/bili_sub_del 123456"""
+        """取消订阅。用法：/bili_sub_del <UID>"""
         args = (event.message_str or "").split()
-        uid = args[1] if len(args) >= 2 else ""
-        if not uid.isdigit():
+        uid_str = args[1] if len(args) >= 2 else ""
+        if not uid_str.isdigit():
             yield event.plain_result("参数错误。用法：/bili_sub_del <B站UID>")
             return
-
         session = self._session_key(event)
-        uid_int = int(uid)
+        uid = int(uid_str)
         old = self.subscriptions.get(session, [])
-        new = [item for item in old if item.uid != uid_int]
+        new = [s for s in old if s.uid != uid]
         if len(new) == len(old):
             yield event.plain_result("未找到该订阅。")
             return
-
         if new:
             self.subscriptions[session] = new
         else:
             self.subscriptions.pop(session, None)
         self._save_subscriptions()
-        yield event.plain_result(f"已取消订阅 UID {uid_int}")
+        yield event.plain_result(f"已取消订阅 UID {uid}")
 
     @filter.command("bili_sub_list")
     async def cmd_bili_sub_list(self, event: AstrMessageEvent):
         """查看当前会话订阅列表。"""
-        session = self._session_key(event)
-        subs = self.subscriptions.get(session, [])
+        subs = self.subscriptions.get(self._session_key(event), [])
         if not subs:
             yield event.plain_result("当前会话没有订阅。")
             return
         lines = ["当前订阅列表："]
-        for idx, item in enumerate(subs, start=1):
-            extra: List[str] = []
-            if item.filter_types:
-                extra.append("types=" + ",".join(item.filter_types))
-            if item.filter_regex:
-                extra.append("regex=" + ",".join(item.filter_regex))
-            suffix = f" ({'; '.join(extra)})" if extra else ""
-            lines.append(f"{idx}. UID {item.uid}{suffix}")
+        for i, s in enumerate(subs, 1):
+            lines.append(f"{i}. UID {s.uid}{self._fmt_sub(s)}")
         yield event.plain_result("\n".join(lines))
 
     @filter.command("bili_sub_test")
     async def cmd_bili_sub_test(self, event: AstrMessageEvent):
-        """测试订阅动态抓取与过滤。用法：/bili_sub_test <B站UID> [过滤器...]"""
-        args = (event.message_str or "").split()
-        uid = args[1] if len(args) >= 2 else ""
-        if not uid.isdigit():
+        """测试动态抓取与过滤。用法：/bili_sub_test <UID> [过滤器...]"""
+        parsed = self._parse_uid_args((event.message_str or "").split())
+        if not parsed:
             yield event.plain_result("参数错误。用法：/bili_sub_test <B站UID> [过滤器...]")
             return
-
-        uid_int = int(uid)
-        filter_types, filter_regex = self._parse_filter_args(args[2:])
-        test_sub = Subscription(
-            uid=uid_int,
-            filter_types=filter_types,
-            filter_regex=filter_regex,
-        )
-
-        items = await self._fetch_dynamic_items(uid_int)
+        uid, ft, fr = parsed
+        test_sub = Subscription(uid=uid, filter_types=ft, filter_regex=fr)
+        items = await self._fetch_dynamic_items(uid)
         if not items:
             yield event.plain_result("未获取到动态数据，请稍后重试。")
             return
-
-        valid_items = [item for item in items if not self._is_top_dynamic(item)]
-        if not valid_items:
-            yield event.plain_result("没有可用于测试的动态（可能全是置顶）。")
-            return
-
-        for item in valid_items:
-            if self._should_filter_dynamic(item, test_sub):
+        for item in items:
+            if is_top_dynamic(item) or should_filter_dynamic(item, test_sub):
                 continue
-            chain = self._build_dynamic_chain(item)
-            if filter_types or filter_regex:
-                suffix_parts: List[str] = []
-                if filter_types:
-                    suffix_parts.append("types=" + ",".join(filter_types))
-                if filter_regex:
-                    suffix_parts.append("regex=" + ",".join(filter_regex))
-                chain.append(Comp.Plain("\n\n测试过滤条件: " + " ; ".join(suffix_parts)))
+            chain = build_dynamic_chain(item)
+            detail = self._fmt_filter(ft, fr)
+            if detail:
+                chain.append(Comp.Plain(f"\n\n测试过滤条件: {detail.strip()}"))
             yield event.chain_result(chain)
             return
-
         yield event.plain_result("测试完成：最新动态都被当前过滤条件过滤掉了。")
+
+    # ───────────────────── 指令：管理员 ─────────────────────
 
     @filter.command("bili_global_sub")
     async def cmd_bili_global_sub(self, event: AstrMessageEvent):
-        """管理员全局订阅。用法：/bili_global_sub <会话UMO> <B站UID> [过滤器...]"""
+        """管理员全局订阅。用法：/bili_global_sub <会话UMO> <UID> [过滤器...]"""
         if not self._is_admin(event):
             yield event.plain_result("无权限：仅管理员可使用该指令。")
             return
-
         args = (event.message_str or "").split()
         session = args[1].strip() if len(args) >= 3 else ""
-        uid = args[2].strip() if len(args) >= 3 else ""
-        if not session or not uid.isdigit():
+        parsed = self._parse_uid_args(args, uid_pos=2) if len(args) >= 3 else None
+        if not session or not parsed:
             yield event.plain_result("参数错误。用法：/bili_global_sub <会话UMO> <B站UID> [过滤器...]")
             return
-
-        uid_int = int(uid)
-        filter_types, filter_regex = self._parse_filter_args(args[3:])
-        latest = await self._fetch_latest_dynamic(uid_int)
-        last_id = str(latest.get("id_str") or "") if latest else ""
-        _, exists = self._upsert_subscription(
-            session=session,
-            uid=uid_int,
-            filter_types=filter_types,
-            filter_regex=filter_regex,
-            latest_dyn_id=last_id,
-        )
+        uid, ft, fr = parsed
+        items = await self._fetch_dynamic_items(uid)
+        last_id = str(items[0].get("id_str") or "") if items else ""
+        _, exists = self._upsert_subscription(session, uid, ft, fr, last_id)
         self._save_subscriptions()
-
-        if exists:
-            yield event.plain_result(f"已更新全局订阅：{session} -> UID {uid_int}")
-        else:
-            yield event.plain_result(f"已添加全局订阅：{session} -> UID {uid_int}")
+        yield event.plain_result(
+            f"{'已更新' if exists else '已添加'}全局订阅：{session} -> UID {uid}"
+        )
 
     @filter.command("bili_global_del")
     async def cmd_bili_global_del(self, event: AstrMessageEvent):
-        """管理员删除全局订阅。用法：/bili_global_del <会话UMO> [B站UID]"""
+        """管理员删除全局订阅。用法：/bili_global_del <会话UMO> [UID]"""
         if not self._is_admin(event):
             yield event.plain_result("无权限：仅管理员可使用该指令。")
             return
-
         args = (event.message_str or "").split()
         session = args[1].strip() if len(args) >= 2 else ""
-        uid = args[2].strip() if len(args) >= 3 else ""
         if not session:
             yield event.plain_result("参数错误。用法：/bili_global_del <会话UMO> [B站UID]")
             return
-
-        if not uid:
+        uid_str = args[2].strip() if len(args) >= 3 else ""
+        if not uid_str:
             if session in self.subscriptions:
-                self.subscriptions.pop(session, None)
+                self.subscriptions.pop(session)
                 self._save_subscriptions()
                 yield event.plain_result(f"已删除会话 {session} 的全部订阅。")
             else:
                 yield event.plain_result("未找到该会话的订阅。")
             return
-
-        if not uid.isdigit():
+        if not uid_str.isdigit():
             yield event.plain_result("UID 必须是数字。")
             return
-
-        uid_int = int(uid)
+        uid = int(uid_str)
         old = self.subscriptions.get(session, [])
-        new = [item for item in old if item.uid != uid_int]
+        new = [s for s in old if s.uid != uid]
         if len(new) == len(old):
             yield event.plain_result("未找到指定订阅。")
             return
@@ -1339,7 +1044,7 @@ class BiliAllPlugin(Star):
         else:
             self.subscriptions.pop(session, None)
         self._save_subscriptions()
-        yield event.plain_result(f"已删除全局订阅：{session} -> UID {uid_int}")
+        yield event.plain_result(f"已删除全局订阅：{session} -> UID {uid}")
 
     @filter.command("bili_global_list")
     async def cmd_bili_global_list(self, event: AstrMessageEvent):
@@ -1350,53 +1055,46 @@ class BiliAllPlugin(Star):
         if not self.subscriptions:
             yield event.plain_result("当前没有任何订阅。")
             return
-
-        lines: List[str] = ["全局订阅列表："]
-        for session, items in self.subscriptions.items():
-            if not items:
+        lines: list[str] = ["全局订阅列表："]
+        for session, subs in self.subscriptions.items():
+            if not subs:
                 continue
             lines.append(f"- {session}")
-            for item in items:
-                extra: List[str] = []
-                if item.filter_types:
-                    extra.append("types=" + ",".join(item.filter_types))
-                if item.filter_regex:
-                    extra.append("regex=" + ",".join(item.filter_regex))
-                suffix = f" ({'; '.join(extra)})" if extra else ""
-                lines.append(f"  • UID {item.uid}{suffix}")
+            for s in subs:
+                lines.append(f"  • UID {s.uid}{self._fmt_sub(s)}")
         yield event.plain_result("\n".join(lines))
+
+    # ───────────────────── 消息事件：链接解析 ─────────────────────
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
     async def handle_bili_parse(self, event: AstrMessageEvent):
-        if not self.enable_bili_parse:
-            return
-        if event.get_sender_id() == event.get_self_id():
+        if not self.enable_bili_parse or event.get_sender_id() == event.get_self_id():
             return
 
-        ref: Dict[str, Any] | None = None
-        matched_bili = False
+        ref: dict[str, Any] | None = None
+        matched = False
 
-        text_tokens = self._extract_links_and_ids(event.message_str or "")
-        if text_tokens:
-            matched_bili = True
-            ref = await self._extract_video_ref_from_tokens(text_tokens)
+        # 1. 纯文本提取
+        tokens = extract_links_and_ids(event.message_str or "")
+        if tokens:
+            matched = True
+            ref = await self._extract_video_ref_from_tokens(tokens)
 
+        # 2. JSON 卡片提取
         if not ref:
             links = self._extract_json_links_from_event(event)
-            if links:
-                bili_links = [
-                    link for link in links if re.search(BILI_MESSAGE_PATTERN, link, re.IGNORECASE)
-                ]
-                if bili_links:
-                    matched_bili = True
-                    ref = await self._extract_video_ref_from_tokens(bili_links)
-                    if not ref:
-                        logger.warning("从 QQ 小程序卡片提取到 B站链接但无法解析: %s", bili_links)
+            bili_links = [lk for lk in links if RE_MESSAGE.search(lk)]
+            if bili_links:
+                matched = True
+                ref = await self._extract_video_ref_from_tokens(bili_links)
+                if not ref:
+                    logger.warning("从 QQ 小程序卡片提取到 B站链接但无法解析: %s", bili_links)
 
-        if matched_bili:
+        if matched:
             event.stop_event()
-
         if not ref:
             return
 
-        await self._send_downloaded_video(event, ref)
+        # 可选下载（不再展示视频详细信息）
+        info = await self._get_video_info(ref) if self.enable_video_download else None
+        await self._send_video_download(event, ref, info)
