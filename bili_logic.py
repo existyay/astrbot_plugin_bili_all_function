@@ -9,14 +9,16 @@ from astrbot.api import logger
 
 try:
     from .bili_helpers import (
-        dig, extract_dynamic_cover, extract_dynamic_images, extract_dynamic_text,
+        dig, extract_dynamic_images, extract_dynamic_text,
         format_count, format_duration, is_forward_lottery, is_lottery_text,
+        resolve_video_page, truncate,
     )
     from .bili_models import Subscription
 except ImportError:
     from bili_helpers import (
-        dig, extract_dynamic_cover, extract_dynamic_images, extract_dynamic_text,
+        dig, extract_dynamic_images, extract_dynamic_text,
         format_count, format_duration, is_forward_lottery, is_lottery_text,
+        resolve_video_page, truncate,
     )
     from bili_models import Subscription
 
@@ -27,10 +29,7 @@ def build_video_chain(info: dict[str, Any], ref: dict[str, Any]) -> list[object]
     """根据视频信息和引用构建消息链（封面 + 文本）。"""
     stat = info.get("stat") or {}
     owner = info.get("owner") or {}
-    pages = info.get("pages") or []
-    page_count = max(len(pages), 1)
-    page_idx = min(int(ref.get("page", 0) or 0), page_count - 1)
-    page = pages[page_idx] if pages and page_idx < len(pages) else {}
+    page, page_idx, page_count = resolve_video_page(info, ref)
 
     bvid = info.get("bvid", "")
     duration = int(page.get("duration") or info.get("duration") or 0)
@@ -40,7 +39,7 @@ def build_video_chain(info: dict[str, Any], ref: dict[str, Any]) -> list[object]
     if cover.startswith(("http://", "https://")):
         try:
             chain.append(Comp.Image.fromURL(cover))
-        except Exception:
+        except (TypeError, ValueError):
             pass
 
     lines = [
@@ -54,7 +53,7 @@ def build_video_chain(info: dict[str, Any], ref: dict[str, Any]) -> list[object]
         lines.append(f"分P: {page_idx + 1}/{page_count} {page.get('part') or ''}".strip())
     desc = (info.get("desc") or "").strip()
     if desc:
-        lines.append(f"简介: {desc[:120]}{'...' if len(desc) > 120 else ''}")
+        lines.append(f"简介: {truncate(desc, 120)}")
     if bvid:
         lines.append(f"https://www.bilibili.com/video/{bvid}")
     chain.append(Comp.Plain("\n".join(lines)))
@@ -75,9 +74,11 @@ _DYN_TYPE_LABEL: dict[str, str] = {
 
 def _dynamic_author_name(item: dict[str, Any]) -> str:
     author = dig(item, "modules", "module_author", default={})
-    name = author.get("name") if isinstance(author, dict) else None
+    if not isinstance(author, dict):
+        return "UP主"
+    name = author.get("name")
     if not name:
-        mid = author.get("mid") if isinstance(author, dict) else None
+        mid = author.get("mid")
         name = f"UID {mid}" if mid else "UP主"
     return str(name).strip()
 
@@ -100,13 +101,13 @@ def build_dynamic_chain(item: dict[str, Any]) -> list[object]:
     for url in images:
         try:
             chain.append(Comp.Image.fromURL(url))
-        except Exception:
+        except (TypeError, ValueError):
             pass
 
     # ── 3. 正文摘要 ──
     body_parts: list[str] = []
     if text:
-        body_parts.append(text[:300] + ("..." if len(text) > 300 else ""))
+        body_parts.append(truncate(text, 300))
     # 视频动态额外展示标题/播放量
     if dyn_type == "DYNAMIC_TYPE_AV":
         archive = dig(item, "modules", "module_dynamic", "major", "archive", default={})
@@ -126,7 +127,7 @@ def build_dynamic_chain(item: dict[str, Any]) -> list[object]:
             orig_name = _dynamic_author_name(orig)
             orig_text = str(dig(orig, "modules", "module_dynamic", "desc", "text", default="")).strip()
             if orig_text:
-                body_parts.append(f"@{orig_name}: {orig_text[:120]}{'...' if len(orig_text) > 120 else ''}")
+                body_parts.append(f"@{orig_name}: {truncate(orig_text, 120)}")
 
     if body_parts:
         chain.append(Comp.Plain("\n".join(body_parts)))

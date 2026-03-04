@@ -105,6 +105,14 @@
         "min": 5,
         "max": 2048
       },
+      "retry_count": {
+        "description": "下载重试次数",
+        "type": "int",
+        "hint": "仅用于视频下载链路，轮询请求固定不重试。",
+        "default": 2,
+        "min": 0,
+        "max": 6
+      },
       "auto_delete": {
         "description": "发送后删除本地暂存",
         "type": "bool",

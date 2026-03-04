@@ -4,25 +4,18 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import socket
-import sys
 import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
+import aiohttp
 import astrbot.api.message_components as Comp
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
-from astrbot.api.star import Context, Star, register
-
-_DIR = Path(__file__).resolve().parent
-if str(_DIR) not in sys.path:
-    sys.path.append(str(_DIR))
+from astrbot.api.star import Context, Star, StarTools, register
 
 try:
     from .bili_constants import (
@@ -31,7 +24,7 @@ try:
     )
     from .bili_helpers import (
         extract_links_and_ids, is_top_dynamic, normalize_modules,
-        parse_filter_args, parse_page_index,
+        parse_filter_args, parse_page_index, resolve_video_page,
     )
     from .bili_logic import (
         append_recent_id, build_dynamic_chain, build_uid_targets,
@@ -45,7 +38,7 @@ except ImportError:
     )
     from bili_helpers import (
         extract_links_and_ids, is_top_dynamic, normalize_modules,
-        parse_filter_args, parse_page_index,
+        parse_filter_args, parse_page_index, resolve_video_page,
     )
     from bili_logic import (
         append_recent_id, build_dynamic_chain, build_uid_targets,
@@ -84,18 +77,22 @@ class BiliAllPlugin(Star):
         self.video_max_duration_seconds = 600
         self.video_max_size_mb = 100
         self.video_auto_delete = True
+        self.video_retry_count = 2
         self.bili_cookie = ""
         self.http_retry_count = 2
         self.http_retry_delay_seconds = 0.35
+        self._http_session: aiohttp.ClientSession | None = None
 
         self._refresh_config()
 
-        self.data_path = _DIR / "data" / "subscriptions.json"
-        self.video_cache_dir = _DIR / "data" / "cache" / "videos"
+        plugin_data_dir = Path(StarTools.get_data_dir())
+        self.data_path = plugin_data_dir / "subscriptions.json"
+        self.video_cache_dir = plugin_data_dir / "cache" / "videos"
         self.subscriptions: dict[str, list[Subscription]] = {}
 
     async def initialize(self):
         self._load_subscriptions()
+        await self._ensure_http_session()
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_loop(), name="bili-dynamic-poll")
         logger.info("BiliAll 插件初始化完成，订阅数: %d", self._sub_count())
@@ -108,6 +105,9 @@ class BiliAllPlugin(Star):
                 await self._poll_task
             except asyncio.CancelledError:
                 pass
+        if self._http_session and not self._http_session.closed:
+            await self._http_session.close()
+            self._http_session = None
         self._save_subscriptions()
 
     # ───────────────────── 配置 ─────────────────────
@@ -118,7 +118,7 @@ class BiliAllPlugin(Star):
         try:
             v = int(value)
             return v if v >= min_val else default
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return default
 
     def _cfg(self, key: str, default: Any = None) -> Any:
@@ -147,6 +147,7 @@ class BiliAllPlugin(Star):
         self.video_max_duration_seconds = ci(c("video_download.max_duration_seconds", 600), 600)
         self.video_max_size_mb = ci(c("video_download.max_size_mb", 100), 100)
         self.video_auto_delete = bool(c("video_download.auto_delete", True))
+        self.video_retry_count = max(0, ci(c("video_download.retry_count", 2), 2, min_val=0))
         self.bili_cookie = str(c("video_download.bili_cookie", "") or "").strip()
         self.http_retry_count = max(0, ci(c("subscription.http_retry_count", 2), 2, min_val=0))
         try:
@@ -182,38 +183,60 @@ class BiliAllPlugin(Star):
     @staticmethod
     def _classify_exc(exc: Exception) -> tuple[str, bool]:
         """分类异常 → (标签, 是否可重试)。"""
-        if isinstance(exc, HTTPError):
-            code = int(getattr(exc, "code", 0) or 0)
+        if isinstance(exc, aiohttp.ClientResponseError):
+            code = int(getattr(exc, "status", 0) or 0)
             tag = "http_client" if 400 <= code < 500 else ("http_server" if code >= 500 else "http")
             return f"{tag}_{code}", code in _RETRYABLE_HTTP
-        if isinstance(exc, (TimeoutError, socket.timeout)):
+        if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
             return "timeout", True
-        if isinstance(exc, URLError):
+        if isinstance(exc, (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError)):
             return "network", True
         return "unknown", False
+
+    async def _ensure_http_session(self) -> aiohttp.ClientSession:
+        if self._http_session and not self._http_session.closed:
+            return self._http_session
+        self._http_session = aiohttp.ClientSession(trust_env=True)
+        return self._http_session
 
     async def _request(
         self, *, url: str, method: str = "GET",
         headers: dict[str, str], read_body: bool = True,
         scene: str, silent_codes: set[int] | None = None,
+        retry: bool = True, retry_count: int | None = None,
     ) -> dict[str, Any] | None:
-        def once() -> dict[str, Any]:
-            req = Request(url, headers=headers, method=method)
-            with urlopen(req, timeout=self.timeout_seconds) as r:
-                return {
-                    "body": r.read() if read_body else b"",
-                    "headers": r.headers,
-                    "status": int(getattr(r, "status", 200) or 200),
-                    "final_url": str(r.geturl()),
-                }
+        session = await self._ensure_http_session()
 
-        max_att = self.http_retry_count + 1
+        effective = retry_count if retry_count is not None else self.http_retry_count
+        max_att = (effective + 1) if retry else 1
         for att in range(1, max_att + 1):
             try:
-                return await asyncio.to_thread(once)
-            except Exception as exc:
-                if isinstance(exc, HTTPError):
-                    code = int(getattr(exc, "code", 0) or 0)
+                async with session.request(
+                    method, url, headers=headers,
+                    allow_redirects=True,
+                    timeout=aiohttp.ClientTimeout(total=self.timeout_seconds),
+                ) as resp:
+                    status = int(resp.status or 0)
+                    if silent_codes and status in silent_codes:
+                        logger.info("请求静默降级[%s][http_%s]", scene, status)
+                        return None
+                    if status >= 400:
+                        raise aiohttp.ClientResponseError(
+                            request_info=resp.request_info,
+                            history=resp.history,
+                            status=status,
+                            message=resp.reason or "",
+                            headers=resp.headers,
+                        )
+                    return {
+                        "body": await resp.read() if read_body else b"",
+                        "headers": resp.headers,
+                        "status": status,
+                        "final_url": str(resp.url),
+                    }
+            except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError) as exc:
+                if isinstance(exc, aiohttp.ClientResponseError):
+                    code = int(getattr(exc, "status", 0) or 0)
                     if silent_codes and code in silent_codes:
                         logger.info("请求静默降级[%s][http_%s]", scene, code)
                         return None
@@ -229,18 +252,20 @@ class BiliAllPlugin(Star):
         headers: dict[str, str] | None = None,
         scene: str = "get_json",
         silent_codes: set[int] | None = None,
+        retry: bool = True, retry_count: int | None = None,
     ) -> dict[str, Any] | None:
         qs = urlencode(params, doseq=True)
         full = f"{base_url}?{qs}" if qs else base_url
         result = await self._request(
             url=full, headers=headers or self._headers(referer=True, cookie=True),
-            scene=scene, silent_codes=silent_codes,
+            scene=scene, silent_codes=silent_codes, retry=retry,
+            retry_count=retry_count,
         )
         if not result:
             return None
         try:
             return json.loads(bytes(result["body"]).decode("utf-8", errors="ignore"))
-        except Exception as exc:
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
             logger.warning("JSON 解析失败[%s]: %s", scene, exc)
             return None
 
@@ -248,12 +273,14 @@ class BiliAllPlugin(Star):
         self, base_url: str, params: dict[str, Any],
         header_list: list[dict[str, str]], *,
         scene: str, silent_codes: set[int] | None = None,
+        retry: bool = True, retry_count: int | None = None,
     ) -> dict[str, Any] | None:
         """尝试多组 headers 直到其中一组返回有效 payload。"""
         for i, h in enumerate(header_list, 1):
             payload = await self._get_json(
                 base_url, params, headers=h,
-                scene=f"{scene}_{i}", silent_codes=silent_codes,
+                scene=f"{scene}_{i}", silent_codes=silent_codes, retry=retry,
+                retry_count=retry_count,
             )
             if payload is not None:
                 return payload
@@ -271,7 +298,7 @@ class BiliAllPlugin(Star):
             return
         try:
             raw = json.loads(self.data_path.read_text(encoding="utf-8")) or {}
-        except Exception as exc:
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
             logger.error("加载订阅数据失败: %s", exc)
             self.subscriptions = {}
             return
@@ -296,7 +323,7 @@ class BiliAllPlugin(Star):
                                       if (s := str(x).strip())],
                         recent_ids=[str(x) for x in (ri_raw if isinstance(ri_raw, list) else []) if x],
                     ))
-                except Exception:
+                except (KeyError, TypeError, ValueError):
                     continue
             if subs:
                 loaded[str(session)] = subs
@@ -307,7 +334,7 @@ class BiliAllPlugin(Star):
             self.data_path.parent.mkdir(parents=True, exist_ok=True)
             data = {s: [asdict(sub) for sub in lst] for s, lst in self.subscriptions.items() if lst}
             self.data_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception as exc:
+        except (OSError, TypeError, ValueError) as exc:
             logger.error("保存订阅数据失败: %s", exc)
 
     def _session_key(self, event: AstrMessageEvent) -> str:
@@ -326,7 +353,7 @@ class BiliAllPlugin(Star):
                 return None
             try:
                 return self._coerce_json(json.loads(s), _depth + 1)
-            except Exception:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 return None
         if isinstance(data, dict):
             if len(data) == 1 and "data" in data:
@@ -384,16 +411,15 @@ class BiliAllPlugin(Star):
         links: list[str] = []
         for comp in msg_obj.message:
             if isinstance(comp, dict):
-                if str(comp.get("type") or "").lower() == "reply":
+                comp_type = str(comp.get("type") or "").lower()
+                if comp_type == "reply":
                     continue
-                is_json = "json" in str(comp.get("type") or "").lower()
+                is_json = "json" in comp_type
                 payload = comp.get("data") or comp
-            elif isinstance(comp, Comp.Json):
-                is_json = True
-                payload = getattr(comp, "data", comp)
             else:
-                is_json = "json" in str(getattr(comp, "type", "") or "").lower()
-                payload = getattr(comp, "data", comp) if is_json else comp
+                comp_type = str(getattr(comp, "type", "") or "").lower()
+                is_json = isinstance(comp, Comp.Json) or "json" in comp_type
+                payload = getattr(comp, "data", comp)
             if is_json:
                 links.extend(self._extract_links_from_json(payload))
         return list(dict.fromkeys(links))
@@ -427,7 +453,9 @@ class BiliAllPlugin(Star):
 
     # ───────────────────── 视频信息 & 下载 ─────────────────────
 
-    async def _get_video_info(self, ref: dict[str, Any]) -> dict[str, Any] | None:
+    async def _get_video_info(
+        self, ref: dict[str, Any], *, retry_count: int | None = None,
+    ) -> dict[str, Any] | None:
         params: dict[str, Any] = {}
         if ref.get("bvid"):
             params["bvid"] = ref["bvid"]
@@ -437,6 +465,7 @@ class BiliAllPlugin(Star):
             return None
         payload = await self._get_json(
             "https://api.bilibili.com/x/web-interface/view", params, scene="video_info",
+            retry_count=retry_count,
         )
         return payload.get("data") if payload and payload.get("code") == 0 else None
 
@@ -451,7 +480,7 @@ class BiliAllPlugin(Star):
         payload = await self._get_json(
             "https://api.bilibili.com/x/player/playurl",
             {"bvid": bvid, "cid": cid, "qn": qn, "fnval": 0, "fnver": 0, "fourk": 1},
-            scene="playurl",
+            scene="playurl", retry_count=self.video_retry_count,
         )
         if not payload or payload.get("code") != 0:
             return None
@@ -475,38 +504,50 @@ class BiliAllPlugin(Star):
         result = await self._request(
             url=url, method="HEAD", headers=self._headers(referer=True, cookie=True),
             read_body=False, scene="probe_size",
+            retry_count=self.video_retry_count,
         )
         if not result:
             return None
         try:
             cl = (result.get("headers") or {}).get("Content-Length")
             return int(cl) if cl else None
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             return None
 
     async def _download_file(self, url: str, save_path: Path, max_bytes: int) -> int:
-        def _do() -> int:
-            req = Request(url, headers=self._headers(referer=True, cookie=True))
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            total = 0
-            with urlopen(req, timeout=self.timeout_seconds) as resp, save_path.open("wb") as f:
-                while True:
-                    chunk = resp.read(256 * 1024)
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if max_bytes > 0 and total > max_bytes:
-                        raise ValueError("视频超过大小限制")
-                    f.write(chunk)
-            return total
+        session = await self._ensure_http_session()
 
-        max_att = self.http_retry_count + 1
+        max_att = self.video_retry_count + 1
         for att in range(1, max_att + 1):
             try:
-                return await asyncio.to_thread(_do)
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                total = 0
+                async with session.get(
+                    url,
+                    headers=self._headers(referer=True, cookie=True),
+                    timeout=aiohttp.ClientTimeout(sock_read=self.timeout_seconds),
+                ) as resp:
+                    status = int(resp.status or 0)
+                    if status >= 400:
+                        raise aiohttp.ClientResponseError(
+                            request_info=resp.request_info,
+                            history=resp.history,
+                            status=status,
+                            message=resp.reason or "",
+                            headers=resp.headers,
+                        )
+                    with save_path.open("wb") as f:
+                        async for chunk in resp.content.iter_chunked(256 * 1024):
+                            if not chunk:
+                                continue
+                            total += len(chunk)
+                            if max_bytes > 0 and total > max_bytes:
+                                raise ValueError("视频超过大小限制")
+                            f.write(chunk)
+                return total
             except ValueError:
                 raise
-            except Exception as exc:
+            except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError) as exc:
                 cat, retryable = self._classify_exc(exc)
                 logger.warning("下载失败[%s] %d/%d: %s", cat, att, max_att, exc)
                 try:
@@ -523,7 +564,7 @@ class BiliAllPlugin(Star):
     ) -> tuple[Path | None, str]:
         """下载视频文件，返回 (保存路径, 错误信息)。"""
         if info is None:
-            info = await self._get_video_info(ref)
+            info = await self._get_video_info(ref, retry_count=self.video_retry_count)
         if not info:
             return None, "获取视频信息失败"
 
@@ -531,10 +572,7 @@ class BiliAllPlugin(Star):
         if not bvid:
             return None, "无法识别 bvid"
 
-        pages = info.get("pages") or []
-        page_count = max(len(pages), 1)
-        page_idx = min(int(ref.get("page", 0) or 0), page_count - 1)
-        page = pages[page_idx] if pages and page_idx < len(pages) else {}
+        page, page_idx, _ = resolve_video_page(info, ref)
         cid = int(page.get("cid") or 0)
         if cid <= 0:
             return None, "无法识别 cid"
@@ -570,7 +608,7 @@ class BiliAllPlugin(Star):
         except ValueError as exc:
             save_path.unlink(missing_ok=True)
             return None, str(exc)
-        except Exception as exc:
+        except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError, RuntimeError) as exc:
             save_path.unlink(missing_ok=True)
             return None, f"下载失败: {exc}"
 
@@ -597,7 +635,7 @@ class BiliAllPlugin(Star):
                     Comp.Video.fromFileSystem(str(video_path.resolve())),
                 ]),
             )
-        except Exception as exc:
+        except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError, RuntimeError) as exc:
             logger.warning("发送下载视频失败: %s", exc)
             await self.context.send_message(
                 event.unified_msg_origin,
@@ -607,7 +645,7 @@ class BiliAllPlugin(Star):
             if self.video_auto_delete and video_path and video_path.exists():
                 try:
                     await asyncio.to_thread(video_path.unlink, True)
-                except Exception:
+                except (OSError, RuntimeError):
                     pass
 
     # ───────────────────── 动态 & 直播 ─────────────────────
@@ -617,7 +655,7 @@ class BiliAllPlugin(Star):
             "https://api.bilibili.com/x/polymer/web-dynamic/desktop/v1/feed/space",
             {"host_mid": uid, "timezone_offset": -480},
             [self._headers(referer=True), self._headers(referer=True, cookie=True)],
-            scene="fetch_dynamic", silent_codes={412},
+            scene="fetch_dynamic", silent_codes={412}, retry=False,
         )
         if not payload or payload.get("code") != 0:
             return []
@@ -632,7 +670,7 @@ class BiliAllPlugin(Star):
     async def _fetch_live_status(self, uid: int) -> dict[str, Any] | None:
         payload = await self._get_json(
             "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids",
-            {"uids[]": uid}, scene="live_status",
+            {"uids[]": uid}, scene="live_status", retry=False,
         )
         if payload and payload.get("code") == 0:
             data = payload.get("data") or {}
@@ -646,7 +684,7 @@ class BiliAllPlugin(Star):
     async def _fetch_live_room(self, uid: int) -> dict[str, Any] | None:
         payload = await self._get_json(
             "https://api.live.bilibili.com/room/v1/Room/getRoomInfoOld",
-            {"mid": uid}, scene="live_room",
+            {"mid": uid}, scene="live_room", retry=False,
         )
         if not payload or payload.get("code") != 0:
             return None
@@ -712,7 +750,7 @@ class BiliAllPlugin(Star):
             changed = True
 
         # 直播状态变更
-        if live_info and "live" not in set(sub.filter_types or []):
+        if live_info and "live" not in (sub.filter_types or []):
             now_live = int(live_info.get("live_status") or 0) == 1
             if now_live != sub.is_live:
                 sub.is_live = now_live
@@ -898,6 +936,14 @@ class BiliAllPlugin(Star):
             f"- 时长上限: {self.video_max_duration_seconds}s",
             f"- 大小上限: {self.video_max_size_mb}MB",
             f"- 自动删缓存: {'是' if self.video_auto_delete else '否'}",
+        ])
+
+        lines.append("\n重试策略：")
+        lines.extend([
+            f"- 轮询重试: 0（零重试）",
+            f"- 解析/自检重试: {self.http_retry_count}",
+            f"- 下载重试: {self.video_retry_count}",
+            f"- 重试间隔: {self.http_retry_delay_seconds}s × 次数",
         ])
 
         final = "fail" if "fail" in (cs, ss) else ("warn" if "warn" in (cs, ss) or warnings else "ok")
@@ -1096,5 +1142,7 @@ class BiliAllPlugin(Star):
             return
 
         # 可选下载（不再展示视频详细信息）
-        info = await self._get_video_info(ref) if self.enable_video_download else None
+        info = await self._get_video_info(
+            ref, retry_count=self.video_retry_count,
+        ) if self.enable_video_download else None
         await self._send_video_download(event, ref, info)

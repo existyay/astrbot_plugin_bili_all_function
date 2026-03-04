@@ -36,13 +36,14 @@
 
 ## 说明
 
-- 订阅数据保存于 `data/subscriptions.json`
+- 订阅数据保存于 AstrBot 插件数据目录下的 `subscriptions.json`
 - 轮询采用 round-robin（每轮仅检测 1 个 UID），间隔默认 `300` 秒，可通过配置 `poll_interval_seconds` 调整
 - 请求超时默认 `15` 秒，可通过配置 `timeout_seconds` 调整
 - 每次最多推送 `3` 条新动态，可通过配置 `dynamic_limit` 调整
 - 管理员指令依赖配置项 `admin_ids`（数组，元素为发送者ID）
-- 视频下载暂存目录为 `data/cache/videos`，可配置发送后自动删除
-- 动态订阅固定使用 `desktop/v1/feed/space` 稳定源，遇到 `HTTP 412` 时静默降级并等待下一轮重试
+- 视频下载暂存目录为 AstrBot 插件数据目录下的 `cache/videos`，可配置发送后自动删除
+- 网络层采用原生异步 `aiohttp`，避免 `urllib + to_thread` 的线程调度开销
+- 动态/直播轮询请求固定零重试（失败直接等待下一轮），避免轮询内重试带来的调度开销
 
 ## 配置页面
 
@@ -53,12 +54,13 @@
 - `features.enable_bili_parse`：是否启用普通 B 站链接解析
 - `features.enable_bili_parse`：是否启用统一入口解析（文本 + QQ 小程序 JSON）
 - `subscription.*`：轮询周期、超时、推送上限、任务间隔、去重缓存长度
-- `subscription.http_retry_count`：网络请求失败时的重试次数
+- `subscription.http_retry_count`：非轮询请求失败时的重试次数
 - `subscription.http_retry_delay_seconds`：网络请求重试基础间隔
 - `video_download.enable`：是否启用“下载后发送视频文件”
 - `video_download.quality`：视频目标画质（自动向下兼容）
 - `video_download.max_duration_seconds`：可暂存视频的最大时长
 - `video_download.max_size_mb`：可暂存视频的最大体积
+- `video_download.retry_count`：视频下载失败时的重试次数
 - `video_download.auto_delete`：发送后是否删除本地暂存文件
 - `video_download.bili_cookie`：B站登录 Cookie（可选，用于解锁更高画质下载）
 - `permission.admin_ids`：管理员 ID（逗号/空格/换行分隔）

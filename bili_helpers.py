@@ -49,9 +49,20 @@ def parse_page_index(url_or_text: str) -> int:
         for seg in (urlparse(url_or_text).query or "").split("&"):
             if seg.startswith("p="):
                 return max(int(seg.split("=", 1)[1]) - 1, 0)
-    except Exception:
+    except (TypeError, ValueError, IndexError):
         pass
     return 0
+
+
+def resolve_video_page(
+    info: dict[str, Any], ref: dict[str, Any],
+) -> tuple[dict[str, Any], int, int]:
+    """从视频信息 + 引用中解析分P → (page_dict, page_index_0based, page_count)。"""
+    pages = info.get("pages") or []
+    page_count = max(len(pages), 1)
+    page_idx = min(int(ref.get("page", 0) or 0), page_count - 1)
+    page = pages[page_idx] if pages and page_idx < len(pages) else {}
+    return page, page_idx, page_count
 
 
 # ───────────────────────── 格式化 ─────────────────────────
@@ -68,6 +79,11 @@ def format_duration(seconds: int) -> str:
     m, s = divmod(max(seconds, 0), 60)
     h, m = divmod(m, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def truncate(s: str, max_len: int, suffix: str = "...") -> str:
+    """截断字符串到 *max_len*，超出部分用 *suffix* 替代。"""
+    return s if len(s) <= max_len else s[:max_len] + suffix
 
 
 # ───────────────────────── 动态数据提取 ─────────────────────────
