@@ -58,8 +58,8 @@
 - `subscription.http_retry_delay_seconds`：网络请求重试基础间隔
 - `video_download.enable`：是否启用“下载后发送视频文件”
 - `video_download.quality`：视频目标画质（自动向下兼容）
-- `video_download.max_duration_seconds`：可暂存视频的最大时长
-- `video_download.max_size_mb`：可暂存视频的最大体积
+- `video_download.max_duration_seconds`：可暂存视频的最大时长（`0` 表示不限制）
+- `video_download.max_size_mb`：可暂存视频的最大体积（`0` 表示不限制）
 - `video_download.retry_count`：视频下载失败时的重试次数
 - `video_download.auto_delete`：发送后是否删除本地暂存文件
 - `video_download.bili_cookie`：B站登录 Cookie（可选，用于解锁更高画质下载）

@@ -144,8 +144,8 @@ class BiliAllPlugin(Star):
         self.enable_video_download = bool(c("video_download.enable", False))
         label = str(c("video_download.quality", "720P")).upper()
         self.video_quality_label = label if label in QUALITY_TO_QN else "720P"
-        self.video_max_duration_seconds = ci(c("video_download.max_duration_seconds", 600), 600)
-        self.video_max_size_mb = ci(c("video_download.max_size_mb", 100), 100)
+        self.video_max_duration_seconds = ci(c("video_download.max_duration_seconds", 600), 600, min_val=0)
+        self.video_max_size_mb = ci(c("video_download.max_size_mb", 100), 100, min_val=0)
         self.video_auto_delete = bool(c("video_download.auto_delete", True))
         self.video_retry_count = max(0, ci(c("video_download.retry_count", 2), 2, min_val=0))
         self.bili_cookie = str(c("video_download.bili_cookie", "") or "").strip()
@@ -815,11 +815,15 @@ class BiliAllPlugin(Star):
             ("poll_interval_seconds", "subscription.poll_interval_seconds"),
             ("timeout_seconds", "subscription.timeout_seconds"),
             ("dynamic_limit", "subscription.dynamic_limit"),
-            ("video_max_duration_seconds", "video_download.max_duration_seconds"),
-            ("video_max_size_mb", "video_download.max_size_mb"),
         ):
             if getattr(self, attr, 0) <= 0:
                 errors.append(f"{label} 必须 > 0")
+        for attr, label in (
+            ("video_max_duration_seconds", "video_download.max_duration_seconds"),
+            ("video_max_size_mb", "video_download.max_size_mb"),
+        ):
+            if getattr(self, attr, -1) < 0:
+                errors.append(f"{label} 必须 >= 0（0 表示不限制）")
         qn = QUALITY_TO_QN.get(self.video_quality_label, 64)
         if self.enable_video_download and qn >= 80 and not self.bili_cookie:
             warnings.append("已启用高画质下载但未填写 Cookie，可能无法获取 1080P 及以上")
@@ -933,8 +937,8 @@ class BiliAllPlugin(Star):
             f"- 链接解析: {'开启' if self.enable_bili_parse else '关闭'}",
             f"- 下载发送: {'开启' if self.enable_video_download else '关闭'}",
             f"- 下载画质: {self.video_quality_label}",
-            f"- 时长上限: {self.video_max_duration_seconds}s",
-            f"- 大小上限: {self.video_max_size_mb}MB",
+            f"- 时长上限: {'不限制' if self.video_max_duration_seconds == 0 else f'{self.video_max_duration_seconds}s'}",
+            f"- 大小上限: {'不限制' if self.video_max_size_mb == 0 else f'{self.video_max_size_mb}MB'}",
             f"- 自动删缓存: {'是' if self.video_auto_delete else '否'}",
         ])
 

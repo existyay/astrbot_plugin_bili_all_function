@@ -92,17 +92,17 @@
       "max_duration_seconds": {
         "description": "最大允许时长(秒)",
         "type": "int",
-        "hint": "超出该时长的视频不会下载。",
+        "hint": "超出该时长的视频不会下载；填写 0 表示不限制。",
         "default": 600,
-        "min": 10,
+        "min": 0,
         "max": 14400
       },
       "max_size_mb": {
         "description": "最大允许大小(MB)",
         "type": "int",
-        "hint": "下载过程中会严格限制文件大小。",
+        "hint": "下载过程中会严格限制文件大小；填写 0 表示不限制。",
         "default": 100,
-        "min": 5,
+        "min": 0,
         "max": 2048
       },
       "retry_count": {
