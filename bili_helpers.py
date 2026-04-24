@@ -141,7 +141,23 @@ def extract_dynamic_images(item: dict[str, Any], *, limit: int = 9) -> list[str]
                     urls.append(u)
             elif isinstance(p, str) and p.startswith(("http://", "https://")) and p not in urls:
                 urls.append(p)
+    # 转发动态优先回落到原动态图片/封面
+    if not urls:
+        orig = item.get("orig")
+        if isinstance(orig, dict):
+            return extract_dynamic_images(orig, limit=limit)
     return urls[:limit]
+
+
+def extract_live_cover(live_info: dict[str, Any]) -> str:
+    """提取直播封面（不同接口字段命名不一致，按优先级尝试）。"""
+    return _http_url(
+        live_info,
+        "cover_from_user",
+        "user_cover",
+        "cover",
+        "keyframe",
+    )
 
 
 def is_top_dynamic(item: dict[str, Any]) -> bool:

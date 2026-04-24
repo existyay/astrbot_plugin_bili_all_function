@@ -8,7 +8,7 @@ import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 from urllib.parse import urlencode
 
 import aiohttp
@@ -28,7 +28,7 @@ try:
     )
     from .bili_logic import (
         append_recent_id, build_dynamic_chain, build_uid_targets,
-        build_video_chain, should_filter_dynamic,
+        build_live_chain, build_video_chain, should_filter_dynamic,
     )
     from .bili_models import Subscription
 except ImportError:
@@ -42,7 +42,7 @@ except ImportError:
     )
     from bili_logic import (
         append_recent_id, build_dynamic_chain, build_uid_targets,
-        build_video_chain, should_filter_dynamic,
+        build_live_chain, build_video_chain, should_filter_dynamic,
     )
     from bili_models import Subscription
 
@@ -696,8 +696,21 @@ class BiliAllPlugin(Star):
             "uname": d.get("uname") or f"UID {uid}",
             "room_id": d.get("roomid") or 0,
             "title": d.get("title") or "",
+            "cover": d.get("cover") or d.get("user_cover") or "",
+            "keyframe": d.get("keyframe") or "",
             "live_status": int(d.get("liveStatus") or 0),
         }
+
+    @staticmethod
+    def _latest_non_top_dynamic_id(items: list[dict[str, Any]]) -> str:
+        """提取最新非置顶动态 id（用于订阅锚点，避免置顶导致漏推）。"""
+        for item in items:
+            if is_top_dynamic(item):
+                continue
+            dyn_id = str(item.get("id_str") or "")
+            if dyn_id:
+                return dyn_id
+        return ""
 
     # ───────────────────── 订阅处理 ─────────────────────
 
@@ -756,16 +769,11 @@ class BiliAllPlugin(Star):
                 sub.is_live = now_live
                 changed = True
                 uname = live_info.get("uname") or f"UID {sub.uid}"
-                if now_live:
-                    title = live_info.get("title") or ""
-                    room = live_info.get("room_id") or ""
-                    link = f"https://live.bilibili.com/{room}" if room else ""
-                    msg = f"[LIVE] {uname} 开播了\n{title}".strip()
-                    if link:
-                        msg += f"\n{link}"
-                else:
-                    msg = f"[OFFLINE] {uname} 下播了"
-                await self.context.send_message(session, MessageEventResult().message(msg))
+                live_info.setdefault("uname", uname)
+                await self.context.send_message(
+                    session,
+                    MessageEventResult(chain=build_live_chain(live_info, now_live=now_live)),
+                )
         return changed
 
     async def _poll_loop(self):
@@ -876,12 +884,12 @@ class BiliAllPlugin(Star):
     # ───────────────────── 指令：公共辅助 ─────────────────────
 
     @staticmethod
-    def _parse_uid_args(args: list[str], uid_pos: int = 1) -> tuple[int, list[str], list[str]] | None:
+    def _parse_uid_args(args: Sequence[str], uid_pos: int = 1) -> tuple[int, list[str], list[str]] | None:
         """从命令参数提取 (uid, filter_types, filter_regex)，失败返回 None。"""
         uid_str = args[uid_pos] if len(args) > uid_pos else ""
         if not uid_str.isdigit():
             return None
-        ft, fr = parse_filter_args(args[uid_pos + 1:], VALID_FILTER_TYPES)
+        ft, fr = parse_filter_args(list(args[uid_pos + 1:]), VALID_FILTER_TYPES)
         return int(uid_str), ft, fr
 
     @staticmethod
@@ -970,7 +978,7 @@ class BiliAllPlugin(Star):
         uid, ft, fr = parsed
         session = self._session_key(event)
         items = await self._fetch_dynamic_items(uid)
-        last_id = str(items[0].get("id_str") or "") if items else ""
+        last_id = self._latest_non_top_dynamic_id(items)
         _, exists = self._upsert_subscription(session, uid, ft, fr, last_id)
         self._save_subscriptions()
         detail = self._fmt_filter(ft, fr)
@@ -1053,7 +1061,7 @@ class BiliAllPlugin(Star):
             return
         uid, ft, fr = parsed
         items = await self._fetch_dynamic_items(uid)
-        last_id = str(items[0].get("id_str") or "") if items else ""
+        last_id = self._latest_non_top_dynamic_id(items)
         _, exists = self._upsert_subscription(session, uid, ft, fr, last_id)
         self._save_subscriptions()
         yield event.plain_result(

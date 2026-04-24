@@ -9,14 +9,14 @@ from astrbot.api import logger
 
 try:
     from .bili_helpers import (
-        dig, extract_dynamic_images, extract_dynamic_text,
+        dig, extract_dynamic_images, extract_dynamic_text, extract_live_cover,
         format_count, format_duration, is_forward_lottery, is_lottery_text,
         resolve_video_page, truncate,
     )
     from .bili_models import Subscription
 except ImportError:
     from bili_helpers import (
-        dig, extract_dynamic_images, extract_dynamic_text,
+        dig, extract_dynamic_images, extract_dynamic_text, extract_live_cover,
         format_count, format_duration, is_forward_lottery, is_lottery_text,
         resolve_video_page, truncate,
     )
@@ -93,7 +93,7 @@ def build_dynamic_chain(item: dict[str, Any]) -> list[object]:
 
     # ── 1. 头部：UP主 + 动态类型 ──
     type_label = _DYN_TYPE_LABEL.get(dyn_type, "动态")
-    header = f"{name} 发布了{type_label}"
+    header = f"[BILI动态] {name} · {type_label}"
     chain.append(Comp.Plain(header))
 
     # ── 2. 图片（视频封面 / 图文多图） ──
@@ -134,8 +134,35 @@ def build_dynamic_chain(item: dict[str, Any]) -> list[object]:
 
     # ── 4. 链接 ──
     if dyn_id:
-        chain.append(Comp.Plain(f"https://t.bilibili.com/{dyn_id}"))
+        chain.append(Comp.Plain(f"🔗 https://t.bilibili.com/{dyn_id}"))
 
+    return chain
+
+
+def build_live_chain(live_info: dict[str, Any], *, now_live: bool) -> list[object]:
+    """构建直播状态推送消息链（开播含封面，下播仅文本）。"""
+    uname = str(live_info.get("uname") or "UP主").strip()
+    room = str(live_info.get("room_id") or "").strip()
+    title = str(live_info.get("title") or "").strip()
+    link = f"https://live.bilibili.com/{room}" if room else ""
+
+    chain: list[object] = []
+    if now_live:
+        cover = extract_live_cover(live_info)
+        if cover:
+            try:
+                chain.append(Comp.Image.fromURL(cover))
+            except (TypeError, ValueError):
+                pass
+        lines = [f"[BILI直播] {uname} 开播了"]
+        if title:
+            lines.append(title)
+        if link:
+            lines.append(f"🔗 {link}")
+        chain.append(Comp.Plain("\n".join(lines)))
+        return chain
+
+    chain.append(Comp.Plain(f"[BILI直播] {uname} 下播了"))
     return chain
 
 
