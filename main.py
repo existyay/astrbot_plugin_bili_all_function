@@ -18,10 +18,11 @@ import os
 import random
 import re
 import time
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -92,17 +93,25 @@ try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
         compile_filter_patterns,
         extract_links_and_ids,
         format_bytes,
+        format_group_map_line,
         host_of,
+        is_blocked_session,
         is_trusted_host,
         is_valid_uid,
         mask_secret,
         normalize_modules,
+        normalize_session,
+        parse_blocked_groups,
         parse_filter_args,
+        parse_group_map,
         parse_page_index,
+        render_group_map,
         resolve_video_page,
         sanitize_cookie,
         sanitize_filename,
+        split_group_map,
         validate_filter_patterns,
+        validate_group_map,
     )
     from .bili_logic import (
         append_recent_id,
@@ -116,7 +125,7 @@ try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
         pick_push_batch,
         should_filter_dynamic,
     )
-    from .bili_models import Subscription
+    from .bili_models import GroupBinding, Subscription
 except ImportError:  # pragma: no cover
     from bili_constants import (
         API_DYNAMIC_FEED,
@@ -172,17 +181,25 @@ except ImportError:  # pragma: no cover
         compile_filter_patterns,
         extract_links_and_ids,
         format_bytes,
+        format_group_map_line,
         host_of,
+        is_blocked_session,
         is_trusted_host,
         is_valid_uid,
         mask_secret,
         normalize_modules,
+        normalize_session,
+        parse_blocked_groups,
         parse_filter_args,
+        parse_group_map,
         parse_page_index,
+        render_group_map,
         resolve_video_page,
         sanitize_cookie,
         sanitize_filename,
+        split_group_map,
         validate_filter_patterns,
+        validate_group_map,
     )
     from bili_logic import (
         append_recent_id,
@@ -196,7 +213,7 @@ except ImportError:  # pragma: no cover
         pick_push_batch,
         should_filter_dynamic,
     )
-    from bili_models import Subscription
+    from bili_models import GroupBinding, Subscription
 
 #: 可重试的 HTTP 状态码（模块级别名，保持向后兼容的导入路径）。
 _RETRYABLE_HTTP = RETRYABLE_HTTP
@@ -235,6 +252,27 @@ class ParsedUidArgs:
     error: str = ""
 
 
+#: 指令 handler 的通用签名（供群屏蔽闸门装饰器复用）。
+CommandHandler = Callable[[Any, AstrMessageEvent], AsyncGenerator[Any, None]]
+
+
+def _blocked_guard(handler: CommandHandler) -> CommandHandler:
+    """群屏蔽闸门：被屏蔽会话里的指令直接静默忽略（不回复，避免暴露机器人存在）。
+
+    仅用于指令 handler；链接解析与推送链路的闸门分别在 ``handle_bili_parse``
+    与 ``_safe_send`` 中显式判断。
+    """
+
+    @wraps(handler)
+    async def wrapper(self: Any, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if self._is_blocked(self._session_key(event)):
+            return
+        async for item in handler(self, event):
+            yield item
+
+    return wrapper
+
+
 class BiliAllPlugin(Star):
     """B站链接解析与UP主动态订阅插件。
 
@@ -247,6 +285,12 @@ class BiliAllPlugin(Star):
       /bili_global_sub <UMO> <UID> [...]  管理员：为指定会话订阅
       /bili_global_del <UMO> [UID]        管理员：删除指定会话订阅
       /bili_global_list                   管理员：查看全部订阅
+      /bili_map_sync                      管理员：立即应用「群订阅映射表」并回写
+
+    群聊级开关（设置面板）：
+      * ``permission.blocked_groups``：屏蔽的群，完全不启用本插件；
+      * ``subscription.group_subscriptions``：在设置里直接写「群 = UID」映射，
+        无需在群里执行订阅指令；群内指令建立的订阅会自动同步回该配置项。
     """
 
     # ───────────────────── 生命周期 ─────────────────────
@@ -256,6 +300,9 @@ class BiliAllPlugin(Star):
         self.context = context
         # AstrBot >= 4.20 的 Star 会注入插件级 logger；旧版本回退到全局 logger。
         self.logger = getattr(self, "logger", None) or logger
+        # 保留原始配置对象：AstrBotConfig 支持 save_config()，用于把「群内命令
+        # 建立的订阅」回写进设置面板（纯 dict 场景只更新内存态，不回写文件）。
+        self.config_obj: Any = config if isinstance(config, dict) else None
         self.config: dict[str, Any] = dict(config) if config else {}
         self._poll_task: asyncio.Task | None = None
         self._running = False
@@ -294,6 +341,14 @@ class BiliAllPlugin(Star):
         self.uid_concurrency = DEFAULT_UID_CONCURRENCY
         self.recent_ids_limit = DEFAULT_RECENT_IDS_LIMIT
         self.dynamic_wrap_width = DYNAMIC_TEXT_WRAP_WIDTH
+        # 群屏蔽列表与「群订阅映射表」（设置面板）
+        self.blocked_groups: tuple[str, ...] = ()
+        self.group_map_text = ""
+        self.group_bindings: tuple[GroupBinding, ...] = ()
+        self.group_map_errors: list[str] = []
+        self.sync_group_map = True
+        self.group_map_authoritative = False
+        self._last_mirror_text: str | None = None
         self.empty_retry_count = DEFAULT_EMPTY_RETRY_COUNT
         self.empty_retry_delay_seconds = DEFAULT_EMPTY_RETRY_DELAY_SECONDS
         self.http_retry_count = DEFAULT_HTTP_RETRY_COUNT
@@ -330,14 +385,24 @@ class BiliAllPlugin(Star):
         """插件启用时调用：加载订阅、建立会话、注册插件页面 API 并启动轮询。"""
         self._started_at = time.time()
         self._load_subscriptions()
+        self._refresh_config()
+        # 先把已有订阅（旧方法：群内指令建立的）同步进设置面板，便于查看/接管
+        self._sync_group_map_config()
         await self._ensure_http_session()
         self._register_web_api()
         self._running = True
         self._start_poll_task()
+        if self.group_map_errors:
+            for err in self.group_map_errors[:5]:
+                self.logger.warning("群订阅映射表配置有问题：%s", err)
         self.logger.info(
-            "BiliAll 插件初始化完成：订阅 %d 个（会话 %d 个），轮询间隔 %ds，UID 并发 %d，下载发送 %s，Cookie %s",
+            "BiliAll 插件初始化完成：订阅 %d 个（会话 %d 个），配置映射 %d 条（会话 %d 个），"
+            "屏蔽群聊 %d 个，轮询间隔 %ds，UID 并发 %d，下载发送 %s，Cookie %s",
             self._sub_count(),
             len(self.subscriptions),
+            len(self.group_bindings),
+            len({b.session for b in self.group_bindings}),
+            len(self.blocked_groups),
             self.poll_interval_seconds,
             self.uid_concurrency,
             "开启" if self.enable_video_download else "关闭",
@@ -405,6 +470,14 @@ class BiliAllPlugin(Star):
                 "dynamic_limit": self.dynamic_limit,
                 "min_request_interval_seconds": self.min_request_interval_seconds,
                 "wrap_width": self.dynamic_wrap_width,
+            },
+            "blocked_groups": len(self.blocked_groups),
+            "group_map": {
+                "entries": len(self.group_bindings),
+                "sessions": len({b.session for b in self.group_bindings}),
+                "synced": self._last_mirror_text is not None,
+                "authoritative": self.group_map_authoritative,
+                "errors": len(self.group_map_errors),
             },
             "stats": dict(self.stats),
         }
@@ -476,8 +549,12 @@ class BiliAllPlugin(Star):
         return []
 
     def _cfg(self, key: str, default: Any = None) -> Any:
-        """按点分路径读取嵌套配置。"""
-        node: Any = self.config
+        """按点分路径读取嵌套配置。
+
+        优先从原始配置对象（AstrBotConfig）读取，这样设置面板保存后无需重启
+        插件即可生效；纯 dict / 无配置时回退到构造时的快照。
+        """
+        node: Any = self.config_obj if self.config_obj is not None else self.config
         for k in key.split("."):
             if not isinstance(node, dict):
                 return default
@@ -485,6 +562,34 @@ class BiliAllPlugin(Star):
             if node is None:
                 return default
         return node
+
+    def _set_cfg(self, key: str, value: Any) -> bool:
+        """写入嵌套配置并持久化（返回是否写进了配置对象）。"""
+        node: Any = self.config_obj if self.config_obj is not None else self.config
+        parts = key.split(".")
+        for k in parts[:-1]:
+            if not isinstance(node, dict):
+                return False
+            child = node.get(k)
+            if not isinstance(child, dict):
+                return False
+            node = child
+        if not isinstance(node, dict):
+            return False
+        node[parts[-1]] = value
+        return True
+
+    def _persist_config(self) -> bool:
+        """把内存中的配置落盘（AstrBotConfig.save_config）；失败时记录并返回 False。"""
+        save = getattr(self.config_obj, "save_config", None)
+        if not callable(save):
+            return False
+        try:
+            save()
+        except Exception as exc:  # noqa: BLE001 - 面板配置写失败不应影响推送
+            self.logger.warning("保存插件配置失败（群订阅映射未回写）：%s", exc)
+            return False
+        return True
 
     def _refresh_config(self) -> None:
         c, ci, cf = self._cfg, self._int, self._float
@@ -568,6 +673,15 @@ class BiliAllPlugin(Star):
         )
         self.bili_cookie = sanitize_cookie(c("video_download.bili_cookie", ""))
         self.admin_ids = set(self._str_list(c("permission.admin_ids", "")))
+
+        # 群屏蔽列表（被屏蔽的群完全不启用本插件）
+        self.blocked_groups = tuple(parse_blocked_groups(c("permission.blocked_groups", "")))
+        # 「群订阅映射表」：可在设置里直接写「群 = UID [过滤器]」，无需在群里发指令
+        self.group_map_text = str(c("subscription.group_subscriptions", "") or "")
+        self.group_bindings = tuple(parse_group_map(self.group_map_text))
+        self.group_map_errors = validate_group_map(self.group_map_text)
+        self.sync_group_map = bool(c("subscription.sync_group_map", True))
+        self.group_map_authoritative = bool(c("subscription.group_map_authoritative", False))
 
     # ───────────────────── HTTP 层 ─────────────────────
 
@@ -1190,7 +1304,10 @@ class BiliAllPlugin(Star):
             return None, f"下载失败: {exc}"
 
     async def _safe_send(self, session: str, chain: list[object], scene: str) -> bool:
-        """主动发送消息链（失败不影响主流程）。"""
+        """主动发送消息链（失败不影响主流程）；被屏蔽会话一律不发送。"""
+        if self._is_blocked(session):
+            self.logger.debug("跳过向已屏蔽会话发送消息[%s]: %s", scene, session)
+            return False
         try:
             await self.context.send_message(session, MessageChain(chain=chain))
             return True
@@ -1449,7 +1566,24 @@ class BiliAllPlugin(Star):
 
     async def _poll_once(self) -> bool:
         """执行一轮轮询，返回是否有订阅状态发生变化。"""
-        targets = build_uid_targets(self.subscriptions)
+        # 每轮重新读取配置：设置面板改动的屏蔽列表 / 映射表无需重启即可生效
+        self._refresh_config()
+        added, updated = await self._apply_group_map()
+        pruned = self._prune_by_group_map()
+        if added or updated or pruned:
+            self.logger.info(
+                "群订阅映射已应用：新增 %d 条，更新 %d 条，清理 %d 条（共 %d 条映射 / %d 个会话）",
+                added,
+                updated,
+                pruned,
+                len(self.group_bindings),
+                len({b.session for b in self.group_bindings}),
+            )
+            self._save_subscriptions()
+        # 每轮都对账一次「自动同步区」：内容一致时只做一次字符串比较，开销可忽略
+        self._sync_group_map_config()
+
+        targets = build_uid_targets(self._active_subscriptions())
         if not targets:
             return False
         self.stats["poll_cycles"] += 1
@@ -1458,7 +1592,7 @@ class BiliAllPlugin(Star):
             *(self._poll_uid(uid, subs, sem) for uid, subs in targets.items()),
             return_exceptions=True,
         )
-        changed = False
+        changed = bool(added or updated or pruned)
         for (uid, _subs), res in zip(targets.items(), results, strict=False):
             if isinstance(res, BaseException):
                 self.stats["poll_errors"] += 1
@@ -1533,6 +1667,21 @@ class BiliAllPlugin(Star):
             warnings.append("subscription.min_request_interval_seconds 为 0，请求无节流，建议 ≥ 0.1")
         if self.recent_ids_limit < 5:
             warnings.append("subscription.recent_ids_limit 过小，可能重复推送历史动态")
+        if self.group_map_errors:
+            errors.extend(f"subscription.group_subscriptions {e}" for e in self.group_map_errors[:10])
+        blocked_map_sessions = sorted({b.session for b in self.group_bindings if self._is_blocked(b.session)})
+        if blocked_map_sessions:
+            warnings.append(
+                "群订阅映射表中有 {} 个会话同时在屏蔽列表内，不会推送：{}".format(
+                    len(blocked_map_sessions),
+                    "、".join(blocked_map_sessions[:3]),
+                )
+            )
+        if self.group_map_authoritative and not callable(getattr(self.config_obj, "save_config", None)):
+            warnings.append(
+                "subscription.group_map_authoritative 已开启，但当前配置对象不支持保存（save_config），"
+                "自动同步区不会写入磁盘，仅本次运行内生效",
+            )
         return errors, warnings
 
     async def _check_cookie(self) -> tuple[str, str]:
@@ -1643,9 +1792,117 @@ class BiliAllPlugin(Star):
         self._save_subscriptions()
         return sub, exists
 
+    # ───────────────────── 群屏蔽与「设置里的订阅映射」 ─────────────────────
+
+    def _is_blocked(self, session: Any) -> bool:
+        """会话是否在屏蔽列表内（被屏蔽的群完全不启用插件功能）。"""
+        return is_blocked_session(session, self.blocked_groups)
+
+    def _active_subscriptions(self) -> dict[str, list[Subscription]]:
+        """参与轮询推送的订阅表：直接剔除被屏蔽会话（既不发也不请求）。"""
+        if not self.blocked_groups:
+            return self.subscriptions
+        return {session: subs for session, subs in self.subscriptions.items() if subs and not self._is_blocked(session)}
+
+    def _find_subscription(self, session: str, uid: int) -> Subscription | None:
+        for sub in self.subscriptions.get(session, []):
+            if sub.uid == uid:
+                return sub
+        return None
+
+    async def _apply_group_map(self) -> tuple[int, int]:
+        """把设置里的「群 = UID」映射应用到订阅表；返回 ``(新增, 更新)`` 条数。"""
+        added = updated = 0
+        for binding in self.group_bindings:
+            if self._is_blocked(binding.session):
+                continue
+            existing = self._find_subscription(binding.session, binding.uid)
+            if existing is None:
+                if self._check_subscription_quota(binding.session, binding.uid):
+                    continue
+                await self._prepare_new_subscription(
+                    binding.session,
+                    binding.uid,
+                    list(binding.filter_types),
+                    list(binding.filter_regex),
+                )
+                added += 1
+            elif not binding.same_filters(existing):
+                existing.filter_types = list(binding.filter_types)
+                existing.filter_regex = list(binding.filter_regex)
+                updated += 1
+        return added, updated
+
+    def _prune_by_group_map(self) -> int:
+        """「映射表为唯一来源」模式下，清理配置里已删除的订阅。
+
+        仅在插件成功回写过一次配置（``_last_mirror_text`` 非空）后才会清理，
+        这样首次启动、配置写保护等情况下不会误删既有订阅。
+        """
+        if not self.group_map_authoritative or self._last_mirror_text is None:
+            return 0
+        declared = {(b.session, b.uid) for b in self.group_bindings}
+        removed = 0
+        for session in list(self.subscriptions):
+            kept = []
+            for sub in self.subscriptions[session]:
+                if (session, sub.uid) in declared:
+                    kept.append(sub)
+                else:
+                    removed += 1
+            if kept:
+                self.subscriptions[session] = kept
+            else:
+                self.subscriptions.pop(session, None)
+        return removed
+
+    def _group_map_bindings(self, *, skip_blocked: bool = True) -> list[GroupBinding]:
+        """当前订阅在映射表里的等价表示（按会话、UID 排序，保证文本稳定）。"""
+        out = [
+            GroupBinding(
+                session=session,
+                uid=sub.uid,
+                filter_types=list(sub.filter_types),
+                filter_regex=list(sub.filter_regex),
+            )
+            for session, subs in self.subscriptions.items()
+            for sub in subs
+            if not (skip_blocked and self._is_blocked(session))
+        ]
+        out.sort(key=lambda b: (b.session, b.uid))
+        return out
+
+    def _sync_group_map_config(self, *, force: bool = False) -> bool:
+        """把当前订阅回写进配置的「自动同步区」。
+
+        这样「旧方法」（群内 ``/bili_sub`` 建立的订阅）也会出现在设置面板里，
+        管理员可以在页面上直接查看、编辑或复制这些映射。管理员手写区已经声明过的
+        映射不会在自动同步区里重复出现（手写区优先级更高）。
+        """
+        if self.config_obj is None:
+            return False
+        if not self.sync_group_map and not force:
+            return False
+        admin_text, _auto_text = split_group_map(self.group_map_text)
+        declared = {(b.session, b.uid) for b in parse_group_map(admin_text)}
+        entries = [b for b in self._group_map_bindings() if (b.session, b.uid) not in declared]
+        new_text = render_group_map(admin_text, entries)
+        if new_text == self.group_map_text:
+            self._last_mirror_text = new_text
+            return False
+        if not self._set_cfg("subscription.group_subscriptions", new_text):
+            return False
+        self.group_map_text = new_text
+        self._last_mirror_text = new_text
+        self.group_bindings = tuple(parse_group_map(new_text))
+        self.group_map_errors = validate_group_map(new_text)
+        self._persist_config()
+        return True
+
     # ───────────────────── 指令：自检 ─────────────────────
 
     @filter.command("bili_state")
+    @_blocked_guard
     async def cmd_bili_state(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """插件状态自检。"""
         self._refresh_config()
@@ -1699,6 +1956,21 @@ class BiliAllPlugin(Star):
             ]
         )
 
+        map_sessions = len({b.session for b in self.group_bindings})
+        session_key = self._session_key(event)
+        session_mapped = sum(1 for b in self.group_bindings if b.session == session_key)
+        lines.append("\n群聊开关（设置面板）：")
+        lines.extend(
+            [
+                f"- 屏蔽群聊: {len(self.blocked_groups)} 个",
+                f"- 本会话映射: {session_mapped} 条",
+                f"- 配置映射: {len(self.group_bindings)} 条 / {map_sessions} 个会话",
+                f"- 映射同步模式: {'以配置为准（删除即取消订阅）' if self.group_map_authoritative else '增量添加'}",
+                f"- 自动同步区回写: {'已启用' if self.sync_group_map else '已关闭'}"
+                f"（{'已回写' if self._last_mirror_text is not None else '未回写'}）",
+            ]
+        )
+
         snap = self.health_snapshot()
         stats = snap["stats"]
         lines.append("\n运行统计：")
@@ -1729,6 +2001,7 @@ class BiliAllPlugin(Star):
     # ───────────────────── 指令：订阅管理 ─────────────────────
 
     @filter.command("bili_sub")
+    @_blocked_guard
     async def cmd_bili_sub(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """订阅UP主动态。用法：/bili_sub <UID> [过滤器...]"""
         parsed = self._parse_uid_args((event.message_str or "").split())
@@ -1745,11 +2018,15 @@ class BiliAllPlugin(Star):
             yield event.plain_result(limit_msg)
             return
         _, exists = await self._prepare_new_subscription(session, uid, ft, fr)
+        self._sync_group_map_config()
         detail = self._fmt_filter(ft, fr)
         if exists:
             yield event.plain_result(f"该 UID 已订阅，已更新过滤条件：{uid}{detail}")
         else:
-            yield event.plain_result(f"订阅成功：UID {uid}{detail}\n新的动态将由后台轮询推送。")
+            yield event.plain_result(
+                f"订阅成功：UID {uid}{detail}\n新的动态将由后台轮询推送。\n"
+                "该映射已同步到插件设置的「群订阅映射表」，也可在设置面板直接查看/编辑。"
+            )
 
     def _check_subscription_quota(self, session: str, uid: int) -> str:
         """检查订阅配额，超限时返回提示文案（未超限返回空串）。"""
@@ -1763,6 +2040,7 @@ class BiliAllPlugin(Star):
         return ""
 
     @filter.command("bili_sub_del")
+    @_blocked_guard
     async def cmd_bili_sub_del(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """取消订阅。用法：/bili_sub_del <UID>"""
         args = (event.message_str or "").split()
@@ -1776,6 +2054,7 @@ class BiliAllPlugin(Star):
             yield event.plain_result("未找到该订阅。")
             return
         self._save_subscriptions()
+        self._sync_group_map_config()
         yield event.plain_result(f"已取消订阅 UID {uid}")
 
     def _remove_subscription(self, session: str, uid: int) -> bool:
@@ -1791,6 +2070,7 @@ class BiliAllPlugin(Star):
         return True
 
     @filter.command("bili_sub_list")
+    @_blocked_guard
     async def cmd_bili_sub_list(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """查看当前会话订阅列表。"""
         subs = self.subscriptions.get(self._session_key(event), [])
@@ -1802,6 +2082,7 @@ class BiliAllPlugin(Star):
         yield event.plain_result("\n".join(lines))
 
     @filter.command("bili_sub_test")
+    @_blocked_guard
     async def cmd_bili_sub_test(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """测试动态抓取与过滤。用法：/bili_sub_test <UID> [过滤器...]"""
         parsed = self._parse_uid_args((event.message_str or "").split())
@@ -1835,17 +2116,18 @@ class BiliAllPlugin(Star):
     # ───────────────────── 指令：管理员 ─────────────────────
 
     @filter.command("bili_global_sub")
+    @_blocked_guard
     async def cmd_bili_global_sub(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """管理员全局订阅。用法：/bili_global_sub <会话UMO> <UID> [过滤器...]"""
         if not self._is_admin(event):
             yield event.plain_result("无权限：仅管理员可使用该指令。")
             return
         args = (event.message_str or "").split()
-        session = args[1].strip() if len(args) >= 3 else ""
+        session = normalize_session(args[1]) if len(args) >= 3 else ""
         parsed = self._parse_uid_args(args, uid_pos=2) if len(args) >= 3 else None
         if not session or not parsed:
             yield event.plain_result(
-                "参数错误。用法：/bili_global_sub <会话UMO> <B站UID> [过滤器...]",
+                "参数错误。用法：/bili_global_sub <会话UMO|群号> <B站UID> [过滤器...]",
             )
             return
         if parsed.error:
@@ -1857,26 +2139,29 @@ class BiliAllPlugin(Star):
             yield event.plain_result(limit_msg)
             return
         _, exists = await self._prepare_new_subscription(session, uid, ft, fr)
+        self._sync_group_map_config()
         yield event.plain_result(
             f"{'已更新' if exists else '已添加'}全局订阅：{session} -> UID {uid}",
         )
 
     @filter.command("bili_global_del")
+    @_blocked_guard
     async def cmd_bili_global_del(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """管理员删除全局订阅。用法：/bili_global_del <会话UMO> [UID]"""
         if not self._is_admin(event):
             yield event.plain_result("无权限：仅管理员可使用该指令。")
             return
         args = (event.message_str or "").split()
-        session = args[1].strip() if len(args) >= 2 else ""
+        session = normalize_session(args[1]) if len(args) >= 2 else ""
         if not session:
-            yield event.plain_result("参数错误。用法：/bili_global_del <会话UMO> [B站UID]")
+            yield event.plain_result("参数错误。用法：/bili_global_del <会话UMO|群号> [B站UID]")
             return
         uid_str = args[2].strip() if len(args) >= 3 else ""
         if not uid_str:
             if session in self.subscriptions:
                 self.subscriptions.pop(session)
                 self._save_subscriptions()
+                self._sync_group_map_config()
                 yield event.plain_result(f"已删除会话 {session} 的全部订阅。")
             else:
                 yield event.plain_result("未找到该会话的订阅。")
@@ -1889,9 +2174,37 @@ class BiliAllPlugin(Star):
             yield event.plain_result("未找到指定订阅。")
             return
         self._save_subscriptions()
+        self._sync_group_map_config()
         yield event.plain_result(f"已删除全局订阅：{session} -> UID {uid}")
 
+    @filter.command("bili_map_sync")
+    @_blocked_guard
+    async def cmd_bili_map_sync(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
+        """管理员立即应用「群订阅映射表」。用法：/bili_map_sync"""
+        if not self._is_admin(event):
+            yield event.plain_result("无权限：仅管理员可使用该指令。")
+            return
+        self._refresh_config()
+        added, updated = await self._apply_group_map()
+        pruned = self._prune_by_group_map()
+        if added or updated or pruned:
+            self._save_subscriptions()
+        mirrored = self._sync_group_map_config(force=True)
+        sessions = len({b.session for b in self.group_bindings})
+        lines = [
+            "群订阅映射同步完成：",
+            f"- 配置映射: {len(self.group_bindings)} 条 / {sessions} 个会话",
+            f"- 本次新增: {added} 条，更新: {updated} 条，清理: {pruned} 条",
+            f"- 自动同步区回写: {'已更新' if mirrored else '无需更新'}",
+            f"- 屏蔽群聊: {len(self.blocked_groups)} 个",
+        ]
+        if self.group_map_errors:
+            lines.append("- 映射表问题:")
+            lines.extend(f"  - {err}" for err in self.group_map_errors[:5])
+        yield event.plain_result("\n".join(lines))
+
     @filter.command("bili_global_list")
+    @_blocked_guard
     async def cmd_bili_global_list(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """管理员查看全局订阅。"""
         if not self._is_admin(event):
@@ -1906,8 +2219,17 @@ class BiliAllPlugin(Star):
         for session, subs in self.subscriptions.items():
             if not subs:
                 continue
-            lines.append(f"▸ {session}")
+            mark = "（已屏蔽，不推送）" if self._is_blocked(session) else ""
+            lines.append(f"▸ {session}{mark}")
             lines.extend(f"  {self._fmt_sub_line(i, s)}" for i, s in enumerate(subs, 1))
+        lines.append("\n以上订阅均已同步到插件设置「群订阅映射表」，可在设置面板直接编辑。")
+        preview = [
+            format_group_map_line(b.session, b.uid, b.filter_types, b.filter_regex) for b in self._group_map_bindings()
+        ]
+        lines.append("映射行（可直接粘贴进设置面板）:")
+        lines.extend(f"  {line}" for line in preview[:10])
+        if len(preview) > 10:
+            lines.append(f"  ...（共 {len(preview)} 行）")
         yield event.plain_result("\n".join(lines))
 
     # ───────────────────── 消息事件：链接解析 ─────────────────────
@@ -1916,6 +2238,9 @@ class BiliAllPlugin(Star):
     async def handle_bili_parse(self, event: AstrMessageEvent) -> None:
         """统一解析普通文本与 QQ 小程序 JSON 卡片中的 B站视频链接。"""
         if not self.enable_bili_parse or event.get_sender_id() == event.get_self_id():
+            return
+        # 被屏蔽的群不启用任何功能（不解析、不回复，也不阻断事件给其它插件）
+        if self._is_blocked(self._session_key(event)):
             return
 
         ref: dict[str, Any] | None = None
@@ -1968,6 +2293,8 @@ class BiliAllPlugin(Star):
         """
         if not self.enable_llm_tool:
             return "B站链接解析工具当前已被插件配置关闭。"
+        if self._is_blocked(self._session_key(event)):
+            return "当前群聊已停用B站插件功能，无法使用该工具。"
         raw = str(url or "").strip()
         if len(raw) > MAX_LLM_URL_LEN:
             return f"输入过长（>{MAX_LLM_URL_LEN} 字符），请只提供 B站视频链接、BV 号或 av 号。"

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 import unicodedata
@@ -18,48 +19,74 @@ try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
         BILI_COOKIE_HOST_SUFFIXES,
         BILI_EMOJI_TOKEN_NAMES,
         DEFAULT_DYNAMIC_TYPE_LABEL,
+        DEFAULT_SESSION_PLATFORM,
         DYNAMIC_IMAGE_LIMIT,
         DYNAMIC_TOP_TAG,
         DYNAMIC_TYPE_LABELS,
         FAST_KEYWORDS,
+        GROUP_MAP_AUTO_HEADER,
+        GROUP_MAP_FILTER_SEP,
+        GROUP_SESSION_PREFIX,
         LINK_KEY_PATTERNS,
+        MAX_BLOCKED_GROUPS,
         MAX_FILTER_REGEX_COUNT,
         MAX_FILTER_REGEX_LEN,
+        MAX_GROUP_MAP_ENTRIES,
+        MAX_GROUP_MAP_LEN,
         MAX_UID,
         RE_AV,
         RE_BRACKET_TOKEN,
         RE_BV,
         RE_EMOJI,
+        RE_GROUP_MAP_AUTO_HEADER,
+        RE_GROUP_MAP_FILTER_SPLIT,
+        RE_GROUP_MAP_SEP,
+        RE_GROUP_MAP_UID_FILTERS,
         RE_LOTTERY,
         RE_SHORT_LINK,
         RE_VIDEO_LINK,
         RE_ZERO_WIDTH,
         SAFE_FILENAME_RE,
         SENSITIVE_COOKIE_KEYS,
+        SESSION_WILDCARD,
+        VALID_FILTER_TYPES,
     )
 except ImportError:  # pragma: no cover
     from bili_constants import (
         BILI_COOKIE_HOST_SUFFIXES,
         BILI_EMOJI_TOKEN_NAMES,
         DEFAULT_DYNAMIC_TYPE_LABEL,
+        DEFAULT_SESSION_PLATFORM,
         DYNAMIC_IMAGE_LIMIT,
         DYNAMIC_TOP_TAG,
         DYNAMIC_TYPE_LABELS,
         FAST_KEYWORDS,
+        GROUP_MAP_AUTO_HEADER,
+        GROUP_MAP_FILTER_SEP,
+        GROUP_SESSION_PREFIX,
         LINK_KEY_PATTERNS,
+        MAX_BLOCKED_GROUPS,
         MAX_FILTER_REGEX_COUNT,
         MAX_FILTER_REGEX_LEN,
+        MAX_GROUP_MAP_ENTRIES,
+        MAX_GROUP_MAP_LEN,
         MAX_UID,
         RE_AV,
         RE_BRACKET_TOKEN,
         RE_BV,
         RE_EMOJI,
+        RE_GROUP_MAP_AUTO_HEADER,
+        RE_GROUP_MAP_FILTER_SPLIT,
+        RE_GROUP_MAP_SEP,
+        RE_GROUP_MAP_UID_FILTERS,
         RE_LOTTERY,
         RE_SHORT_LINK,
         RE_VIDEO_LINK,
         RE_ZERO_WIDTH,
         SAFE_FILENAME_RE,
         SENSITIVE_COOKIE_KEYS,
+        SESSION_WILDCARD,
+        VALID_FILTER_TYPES,
     )
 
 _HTTP_PREFIXES = ("http://", "https://")
@@ -74,6 +101,11 @@ _SPACE_AFTER_CJK_OPEN = re.compile(r"(?<=[（【《「『])[ \t]+")
 _SPACE_AFTER_CJK_PUNCT = re.compile(r"(?<=[，。！？；：、…])[ \t]+(?=[\u4e00-\u9fff])")
 #: 行头禁则：这些标点不允许出现在换行后的行首（会连同前一个字符一起下移）。
 _NO_LINE_START = "，。！？；：、）】》」』…·"
+
+try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
+    from .bili_models import GroupBinding
+except ImportError:  # pragma: no cover
+    from bili_models import GroupBinding
 
 
 # ───────────────────────── 安全嵌套取值 ─────────────────────────
@@ -787,6 +819,254 @@ def parse_filter_args(
             continue
         (types if t in valid_types else regex).append(t)
     return list(dict.fromkeys(types)), list(dict.fromkeys(regex))
+
+
+# ───────────────────────── 群屏蔽列表（设置面板） ─────────────────────────
+
+
+def normalize_session(value: Any) -> str:
+    """把配置里的群标识规范化为 AstrBot 会话 UMO。
+
+    * ``123456``（纯数字群号）→ ``aiocqhttp:GroupMessage:123456``
+    * ``GroupMessage:123456`` → 补全平台前缀
+    * 完整 UMO / ``*`` / 其它写法 → 去空白后原样返回（按原样精确或后缀匹配）
+    """
+    text = str(value or "").strip()
+    if not text or text == SESSION_WILDCARD:
+        return text
+    if text.isdigit():
+        return f"{GROUP_SESSION_PREFIX}{text}"
+    if text.startswith(("GroupMessage:", "FriendMessage:", "Group:", "Private:")):
+        return f"{DEFAULT_SESSION_PLATFORM}:{text}"
+    return text
+
+
+def parse_blocked_groups(value: Any) -> list[str]:
+    """解析「屏蔽群列表」：换行 / 逗号 / 空格分隔，``#`` 之后为注释。"""
+    raw = value if isinstance(value, (list, tuple, set)) else str(value or "").splitlines()
+    out: list[str] = []
+    for item in raw:
+        line = str(item or "").split("#", 1)[0]
+        for token in re.split(r"[,;，；、\s]+", line):
+            text = token.strip()
+            if not text:
+                continue
+            session = normalize_session(text)
+            if session and session not in out:
+                out.append(session)
+            if len(out) >= MAX_BLOCKED_GROUPS:
+                return out
+    return out
+
+
+def is_blocked_session(session: Any, patterns: Sequence[str]) -> bool:
+    """会话是否命中屏蔽列表。
+
+    支持三种写法：完整 UMO、``群号`` / ``GroupMessage:群号``（按后缀匹配）、
+    以及 ``*`` 或 ``aiocqhttp:GroupMessage:*`` 这类通配（匹配全部会话）。
+    """
+    if not patterns:
+        return False
+    target = str(session or "").strip().lower()
+    if not target:
+        return False
+    for raw in patterns:
+        pattern = str(raw or "").strip().lower()
+        if not pattern:
+            continue
+        if pattern in (SESSION_WILDCARD, target):
+            return True
+        if target.endswith(f":{pattern.lstrip(':')}"):
+            return True
+        if "*" in pattern and fnmatch.fnmatchcase(target, pattern):
+            return True
+    return False
+
+
+# ───────────────────────── 群订阅映射表（设置面板） ─────────────────────────
+
+
+def split_group_map(value: Any) -> tuple[str, str]:
+    """把映射表拆成 ``(管理员手写区, 自动同步区)``（两段都参与解析）。"""
+    text = value if isinstance(value, str) else ""
+    index = text.find(GROUP_MAP_AUTO_HEADER)
+    if index >= 0:
+        return text[:index], text[index:]
+    match = RE_GROUP_MAP_AUTO_HEADER.search(text)
+    if match:
+        return text[: match.start()], text[match.start() :]
+    return text, ""
+
+
+def _split_map_chunks(text: str) -> list[str]:
+    """按 ``;`` / ``,`` 等顶层分隔符切分映射项（括号与反引号内不切分）。"""
+    chunks: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    quoted = False
+    for ch in text:
+        if ch == "`":
+            quoted = not quoted
+        elif not quoted and ch in "([（【":
+            depth += 1
+        elif not quoted and ch in ")]）】":
+            depth = max(0, depth - 1)
+        if not quoted and depth == 0 and ch in GROUP_MAP_FILTER_SEP:
+            chunks.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    chunks.append("".join(buf))
+    return [c.strip() for c in chunks if c.strip()]
+
+
+def _tokenize_map_text(text: str) -> list[str]:
+    """按空白切分映射项，支持用反引号包裹含空格的过滤器（内部 `` `` `` 转义）。"""
+    tokens: list[str] = []
+    buf: list[str] = []
+    quoted = False
+    index = 0
+    while index < len(text):
+        ch = text[index]
+        if ch == "`":
+            if quoted and index + 1 < len(text) and text[index + 1] == "`":  # 转义的反引号
+                buf.append("`")
+                index += 2
+                continue
+            quoted = not quoted
+        elif ch.isspace() and not quoted:
+            if buf:
+                tokens.append("".join(buf))
+                buf = []
+        else:
+            buf.append(ch)
+        index += 1
+    if buf:
+        tokens.append("".join(buf))
+    return tokens
+
+
+def _map_chunk_tokens(chunk: str) -> list[str]:
+    """把单个映射项拆成 ``[UID, 过滤器...]``，兼容 ``UID(过滤器...)`` 写法。"""
+    text = chunk.strip()
+    match = RE_GROUP_MAP_UID_FILTERS.match(text)
+    if match:
+        filters = [t for t in RE_GROUP_MAP_FILTER_SPLIT.split(match.group(2)) if t]
+        return [match.group(1), *filters]
+    return _tokenize_map_text(text)
+
+
+def _parse_map_chunk(session: str, chunk: str) -> GroupBinding | None:
+    tokens = _map_chunk_tokens(chunk)
+    if not tokens or not is_valid_uid(tokens[0]):
+        return None
+    filter_types, filter_regex = parse_filter_args(tokens[1:], VALID_FILTER_TYPES)
+    return GroupBinding(
+        session=session,
+        uid=int(tokens[0]),
+        filter_types=filter_types,
+        filter_regex=filter_regex,
+    )
+
+
+def parse_group_map_line(line: str) -> tuple[str, list[GroupBinding], str]:
+    """解析单行映射：返回 ``(群会话, 绑定列表, 错误信息)``（错误为空表示解析成功）。"""
+    raw = str(line or "").strip()
+    if not raw or raw.startswith("#"):
+        return "", [], ""
+    match = RE_GROUP_MAP_SEP.search(raw)
+    if match:
+        head, tail = raw[: match.start()], raw[match.end() :]
+    else:
+        parts = raw.split(None, 1)
+        if len(parts) < 2:
+            return "", [], "缺少 ``=`` 分隔符（应为「群 = UID [过滤器]」）"
+        head, tail = parts[0], parts[1]
+    session = normalize_session(head)
+    if not session:
+        return "", [], "群标识为空"
+    bindings = [b for chunk in _split_map_chunks(tail) if (b := _parse_map_chunk(session, chunk))]
+    if not bindings:
+        return session, [], f"未解析到合法订阅（UID 需为数字）：{tail.strip()}"
+    return session, bindings, ""
+
+
+def parse_group_map(value: Any) -> list[GroupBinding]:
+    """解析「群 = UID [过滤器] [, UID [过滤器]]」映射表（``#`` 开头为注释）。
+
+    与指令里的过滤器写法一致：UID 之后的词若不是过滤类型关键字就当作正则。
+    """
+    text = value if isinstance(value, str) else ""
+    if len(text) > MAX_GROUP_MAP_LEN:
+        text = text[:MAX_GROUP_MAP_LEN]
+    out: list[GroupBinding] = []
+    seen: set[tuple[str, int]] = set()
+    for line in text.splitlines():
+        _session, bindings, _error = parse_group_map_line(line)
+        for binding in bindings:
+            key = (binding.session, binding.uid)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(binding)
+            if len(out) >= MAX_GROUP_MAP_ENTRIES:
+                return out
+    return out
+
+
+def validate_group_map(value: Any) -> list[str]:
+    """校验映射表，返回逐行错误提示（用于 ``/bili_state`` 与日志）。"""
+    text = value if isinstance(value, str) else ""
+    errors: list[str] = []
+    if len(text) > MAX_GROUP_MAP_LEN:
+        errors.append(f"映射表过长（超过 {MAX_GROUP_MAP_LEN} 字符），超出部分已被忽略")
+        text = text[:MAX_GROUP_MAP_LEN]
+    entries = 0
+    for line_no, line in enumerate(text.splitlines(), 1):
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        _session, bindings, error = parse_group_map_line(line)
+        if error:
+            errors.append(f"第 {line_no} 行：{error}")
+            continue
+        entries += len(bindings)
+        for binding in bindings:
+            detail = validate_filter_patterns(binding.filter_regex)
+            if detail:
+                errors.append(f"第 {line_no} 行 UID {binding.uid} 过滤器无效：{detail}")
+    if entries > MAX_GROUP_MAP_ENTRIES:
+        errors.append(f"映射条数 {entries} 超过上限 {MAX_GROUP_MAP_ENTRIES}，超出部分已被忽略")
+    return errors
+
+
+def format_group_map_line(
+    session: str,
+    uid: int,
+    filter_types: Sequence[str] = (),
+    filter_regex: Sequence[str] = (),
+) -> str:
+    """把一条订阅渲染成映射表行（含空格的过滤器会用反引号包裹以保证可回读）。"""
+    tokens = [_quote_map_token(t) for t in (*filter_types, *filter_regex)]
+    suffix = f" {' '.join(tokens)}" if tokens else ""
+    return f"{session} = {uid}{suffix}"
+
+
+def _quote_map_token(token: str) -> str:
+    text = str(token)
+    if text and not any(ch.isspace() or ch in f"{GROUP_MAP_FILTER_SEP}`#" for ch in text):
+        return text
+    return "`" + text.replace("`", "``") + "`"
+
+
+def render_group_map(admin_text: Any, bindings: Sequence[GroupBinding]) -> str:
+    """生成映射表文本：保留管理员手写区，重写自动同步区。"""
+    head = str(admin_text or "").rstrip("\n")
+    if not bindings:
+        return f"{head}\n" if head else ""
+    lines = [head, GROUP_MAP_AUTO_HEADER] if head else [GROUP_MAP_AUTO_HEADER]
+    lines.extend(format_group_map_line(b.session, b.uid, b.filter_types, b.filter_regex) for b in bindings)
+    return "\n".join(lines) + "\n"
 
 
 # ───────────────────────── API modules 规范化 ─────────────────────────

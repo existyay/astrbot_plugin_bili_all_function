@@ -122,6 +122,26 @@
         "default": 60,
         "min": 0,
         "max": 200
+      },
+      "group_subscriptions": {
+        "description": "群与B站订阅映射表",
+        "type": "text",
+        "hint": "在这里直接写「哪个群要推送哪个UP」，无需在群里发订阅指令。一行一个群：`群号 = UID [过滤器]`，多个 UID 用逗号分隔；群号可直接写数字（自动补成 aiocqhttp:GroupMessage:群号），也可写完整会话 UMO；过滤器写法与 /bili_sub 一致（类型关键字 forward/lottery/video/article/draw/live/forward_lottery，其余按正则处理），含空格的过滤器可用反引号包裹，例如 `2(forward ^标题\\s+.*$)`。以 # 开头的行是注释。群内用 /bili_sub 建立的订阅会自动同步到下方「自动同步区」，因此旧方法添加的映射也会显示在这里。",
+        "editor_mode": true,
+        "full_width": true,
+        "default": ""
+      },
+      "sync_group_map": {
+        "description": "把群内订阅自动同步回映射表",
+        "type": "bool",
+        "hint": "开启后，群里用 /bili_sub、管理员用 /bili_global_sub 建立的订阅会写回上面的「自动同步区」，可在设置面板查看与编辑。",
+        "default": true
+      },
+      "group_map_authoritative": {
+        "description": "映射表作为唯一订阅来源",
+        "type": "bool",
+        "hint": "开启后，从映射表里删除某行会在下一次同步时真正取消该订阅（以配置为准）；关闭时映射表只做「增量添加」，删除行不会取消已有订阅（需用 /bili_sub_del 或 /bili_global_del）。为避免误删，仅在插件成功回写过一次配置后才会清理。",
+        "default": false
       }
     }
   },
@@ -190,6 +210,14 @@
         "description": "管理员ID列表",
         "type": "text",
         "hint": "用于全局订阅管理指令。支持逗号、空格或换行分隔，也可直接使用 AstrBot 原生管理员身份。示例: 123456,789012",
+        "default": ""
+      },
+      "blocked_groups": {
+        "description": "屏蔽的群列表",
+        "type": "text",
+        "hint": "被屏蔽的群完全不启用本插件：不解析B站链接、不响应插件指令、不推送动态/直播。一行一个，可写群号（123456）、GroupMessage:123456 或完整会话 UMO；支持 * 与 aiocqhttp:GroupMessage:* 通配；以 # 开头为注释。示例: 123456\\n789012",
+        "editor_mode": true,
+        "full_width": true,
         "default": ""
       }
     }

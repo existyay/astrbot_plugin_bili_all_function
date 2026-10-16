@@ -57,7 +57,18 @@
       "items": "条",
       "times": "次",
       "error": "状态获取失败：{message}",
-      "bridge_missing": "未能连接 AstrBot 面板桥接接口，请从面板的插件页面打开本页。"
+      "bridge_missing": "未能连接 AstrBot 面板桥接接口，请从面板的插件页面打开本页。",
+      "groups": "群聊开关",
+      "blocked_groups": "屏蔽群聊",
+      "group_map_entries": "配置映射",
+      "group_map_sessions": "映射会话",
+      "map_synced": "自动回写",
+      "group_map_mode": "同步模式",
+      "map_errors": "映射问题",
+      "entries_unit": "条",
+      "groups_unit": "个",
+      "authoritative_on": "以配置为准",
+      "authoritative_off": "增量添加"
     }
   }
 }

@@ -8,7 +8,7 @@
 ![astrbot](https://img.shields.io/badge/AstrBot-%3E%3D4.18-ff69b4)
 ![ruff](https://img.shields.io/badge/lint-ruff-261230)
 ![mypy](https://img.shields.io/badge/types-mypy-blue)
-![tests](https://img.shields.io/badge/tests-687%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-780%20passed-brightgreen)
 
 一个聚焦 **B站（bilibili）** 的 AstrBot 插件：链接解析 + UP主动态订阅 + 直播推送。
 
@@ -23,6 +23,11 @@
   自动补全卡片标题、简介、播放量、阅读量、人气等字段，卡片字段缺失也不会输出 `{...}` 原始数据。
 - **自动换行 + 纯文本输出**：按显示列宽（一个汉字算 2 列）自动换行，链接与 `@用户` 不会被拆开；
   推送内容统一去除 emoji 与 B站表情 token（如 `[tv_微笑]`），保证各平台客户端显示一致。
+- **在设置里直接配置「群 ↔ 订阅」映射**：配置项 `subscription.group_subscriptions` 支持一行写一个
+  「群 = UID [过滤器]」，**无需在群里发订阅指令**；群内 `/bili_sub` 建立的订阅会**自动同步回该配置项**
+  （自动同步区），因此新旧两种方式添加的映射都能在设置面板里看到、编辑与复制。
+- **群屏蔽列表**：配置项 `permission.blocked_groups` 里的群**完全不启用插件**——不解析链接、
+  不响应插件指令、不推送动态与直播（连请求都不会发起）。
 - **直播状态推送**：开播 / 下播自动提醒，开播附带直播间标题与封面。
 - **灵活的过滤器**：支持按 `转发 / 抽奖 / 视频 / 专栏 / 图文 / 直播` 类型过滤，也支持正则过滤，
   可以只接收你关心的内容。
@@ -32,7 +37,7 @@
 - **插件页面**：Dashboard 内嵌 `views/overview` 视图，可视化查看运行状态、订阅量与请求统计。
 - **可观测性**：`/bili_state` 一键自检，并输出请求、推送、下载等运行统计；内置健康快照 API。
 - **安全加固**：Cookie 出网域名白名单 + 全链路脱敏 + 输入长度/正则护栏（见 [SECURITY.md](./SECURITY.md)）。
-- **完整测试**：687 个离线用例，语句覆盖率 100%、整体覆盖率约 99.97%，并带 AstrBot 合规自检。
+- **完整测试**：780 个离线用例，语句覆盖率 100%、整体覆盖率约 99.97%，并带 AstrBot 合规自检。
 
 ## 兼容性
 
@@ -60,9 +65,10 @@
 | `/bili_sub_list` | 查看当前会话的订阅列表 |
 | `/bili_sub_test <UID> [过滤器...]` | 立即抓取一次最新动态，用于验证过滤规则 |
 | `/bili_state` | 插件自检：配置、Cookie、订阅链路与功能开关 |
-| `/bili_global_sub <会话UMO> <UID> [过滤器...]` | 【管理员】为指定会话订阅 |
-| `/bili_global_del <会话UMO> [UID]` | 【管理员】删除指定会话的订阅（省略 UID 表示删除全部） |
-| `/bili_global_list` | 【管理员】查看全部会话的订阅 |
+| `/bili_global_sub <会话UMO|群号> <UID> [过滤器...]` | 【管理员】为指定会话订阅（群号可直接写数字） |
+| `/bili_global_del <会话UMO|群号> [UID]` | 【管理员】删除指定会话的订阅（省略 UID 表示删除全部） |
+| `/bili_global_list` | 【管理员】查看全部会话的订阅，并输出可直接粘贴进设置面板的映射行 |
+| `/bili_map_sync` | 【管理员】立即应用设置里的「群订阅映射表」并回写自动同步区 |
 
 > 管理员指令对 **AstrBot 原生管理员** 与配置项 `permission.admin_ids` 中的账号同时生效。
 
@@ -120,6 +126,41 @@
 | `empty_retry_delay_seconds` | `1.0` | 空响应重试基础间隔，实际等待 = 基础间隔 × 轮次 |
 | `min_request_interval_seconds` | `0.2` | 两次外部请求之间的最小间隔（全局节流，降低风控概率） |
 | `wrap_width` | `60` | 推送文本自动换行的显示列宽（一个汉字算 2 列），`0` 表示不换行 |
+| `group_subscriptions` | 空 | **群 ↔ 订阅映射表**：一行一个群（见下方说明），在这里写映射即可，无需在群里发指令 |
+| `sync_group_map` | `true` | 把群内 `/bili_sub` 建立的订阅自动回写到映射表的「自动同步区」 |
+| `group_map_authoritative` | `false` | 开启后映射表为唯一来源：删掉某行即取消该订阅（默认只做增量添加） |
+
+</details>
+
+<details>
+<summary><b>映射表怎么写（subscription.group_subscriptions）</b></summary>
+
+一行一个群，`群 = UID [过滤器]`，多个 UID 用逗号分隔；过滤器写法与 `/bili_sub` 完全一致：
+
+```text
+# 每行一个群；以 # 开头是注释
+946974 = 672328094 forward, 2
+123456 = 946974 video ^标题
+aiocqhttp:GroupMessage:10086 = 703007996
+```
+
+- **群**：可直接写**群号**（自动补成 `aiocqhttp:GroupMessage:<群号>`），也可写 `GroupMessage:123456`
+  或完整会话 UMO（`平台:消息类型:ID`）；
+- **过滤器**：`forward / forward_lottery / lottery / video / article / draw / live` 为类型过滤，
+  其余按**正则**处理（与指令一致）；含空格或逗号的过滤器可用反引号包裹，例如
+  `` `^标题 .*$, 后缀` ``；
+- **自动同步区**：表头 `# ===== 以下为插件自动同步区… =====` 之后的行由插件维护，
+  群内 `/bili_sub`、管理员 `/bili_global_sub` 建立的订阅都会出现在这里，
+  因此在设置面板里能看到「旧方法」添加的全部映射；也可直接编辑这些行。
+  手写区（表头之前）已经声明过的「群 + UID」不会在自动同步区重复出现。
+- **优先级**：同一个「群 + UID」在手写区声明后以手写区为准（含过滤器），
+  群内指令对该条的过滤器修改会在下一轮被映射表覆盖；只想临时改过滤时，
+  请改手写区那一行，或先删掉它让插件把它挪到自动同步区后再改。
+- **同步模式**：默认「增量添加」——删掉自动同步区的行不会取消订阅（请用 `/bili_sub_del`
+  或 `/bili_global_del`）；把 `group_map_authoritative` 打开后，映射表即唯一来源，删行即退订
+  （为避免误删，只在插件成功回写过一次配置后才生效）。
+- 应用时机：插件启动时、每轮轮询前、以及管理员执行 `/bili_map_sync` 时；
+  设置面板保存后无需重启（下一轮轮询即生效，或直接跑一次 `/bili_map_sync`）。
 
 </details>
 
@@ -144,6 +185,28 @@
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `admin_ids` | 空 | 允许使用管理员指令的账号 ID，支持逗号 / 空格 / 换行分隔 |
+| `blocked_groups` | 空 | **屏蔽的群列表**：这些群完全不启用插件（不解析、不响应指令、不推送） |
+
+</details>
+
+<details>
+<summary><b>群屏蔽列表怎么写（permission.blocked_groups）</b></summary>
+
+一行一个（也支持逗号 / 空格分隔），`#` 之后为注释：
+
+```text
+123456
+789012
+GroupMessage:345678
+aiocqhttp:GroupMessage:456789
+*                       # 屏蔽全部会话
+aiocqhttp:GroupMessage:*  # 屏蔽全部群聊
+```
+
+- 支持**群号**、`GroupMessage:群号`、完整会话 UMO，以及 `*` 通配；
+- 被屏蔽的群：链接解析、`/bili_*` 指令、LLM 工具、动态与直播推送**全部停用**，
+  轮询也会直接跳过这些会话（不发起请求、不计入推送统计）；
+- 屏蔽只影响本插件，不会阻断其它插件的消息处理；取消屏蔽后既有订阅立即恢复推送。
 
 </details>
 
@@ -155,6 +218,7 @@
 - 请求统计（总请求、失败、静默风控 412、空响应）；
 - 推送统计（动态推送、直播推送、发送失败）与下载量；
 - 当前轮询策略（间隔、并发、节流、动态条数上限、换行列宽）与功能开关；
+- 群聊开关（屏蔽群数、配置映射条数与会话数、自动回写状态、同步模式、映射表问题数）；
 - 数据版本（`subscriptions.json` 的 `__schema__`）与 Cookie 脱敏提示。
 
 视图完全自包含（内联 CSS/JS，无外部 CDN 请求），通过 AstrBot 官方 Bridge SDK 获取上下文与调用接口；
@@ -186,6 +250,14 @@
       "min_request_interval_seconds": 0.2,
       "wrap_width": 60
     },
+    "blocked_groups": 1,
+    "group_map": {
+      "entries": 3,
+      "sessions": 2,
+      "synced": true,
+      "authoritative": false,
+      "errors": 0
+    },
     "stats": {
       "http_requests": 128, "http_failures": 0, "http_silent": 2,
       "poll_cycles": 41, "poll_errors": 0,
@@ -213,8 +285,8 @@
 
 | 检查 | 命令 | 现状 |
 | --- | --- | --- |
-| 单元测试 + 覆盖率门禁（≥95%） | `pytest` | 687 passed，99.97% |
-| 最低支持版本兼容性 | `pytest tests --ignore=tests/test_compliance.py`（对 AstrBot 4.18） | 652 passed |
+| 单元测试 + 覆盖率门禁（≥95%） | `pytest` | 780 passed，99.97% |
+| 最低支持版本兼容性 | `pytest tests --ignore=tests/test_compliance.py`（对 AstrBot 4.18） | 745 passed |
 | 静态检查（ruff，生产级规则集） | `ruff check .` | 通过 |
 | 代码风格 | `ruff format --check .` | 通过 |
 | 类型检查（mypy） | `mypy` | 通过（5 个源码模块，零错误） |

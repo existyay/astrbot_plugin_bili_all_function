@@ -57,7 +57,18 @@
       "items": "",
       "times": "x",
       "error": "Failed to load status: {message}",
-      "bridge_missing": "AstrBot panel bridge is unavailable. Open this page from the plugin page inside the dashboard."
+      "bridge_missing": "AstrBot panel bridge is unavailable. Open this page from the plugin page inside the dashboard.",
+      "groups": "Group controls",
+      "blocked_groups": "Blocked groups",
+      "group_map_entries": "Config mappings",
+      "group_map_sessions": "Mapped sessions",
+      "map_synced": "Auto write-back",
+      "group_map_mode": "Sync mode",
+      "map_errors": "Mapping errors",
+      "entries_unit": "entries",
+      "groups_unit": "groups",
+      "authoritative_on": "config is source of truth",
+      "authoritative_off": "additive mode"
     }
   }
 }

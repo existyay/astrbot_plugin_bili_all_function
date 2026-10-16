@@ -242,6 +242,22 @@
         : t("views.overview.wrap_off", "不换行")]
     ]));
 
+    var groupMap = data.group_map || {};
+    panels.appendChild(panelCard(t("views.overview.groups", "群聊开关"), [
+      [t("views.overview.blocked_groups", "屏蔽群聊"),
+        (data.blocked_groups || 0) + t("views.overview.groups_unit", "个")],
+      [t("views.overview.group_map_entries", "配置映射"),
+        (groupMap.entries || 0) + t("views.overview.entries_unit", "条")],
+      [t("views.overview.group_map_sessions", "映射会话"), groupMap.sessions || 0],
+      [t("views.overview.map_synced", "自动回写"),
+        groupMap.synced ? t("views.overview.state_on", "开启") : t("views.overview.state_off", "关闭")],
+      [t("views.overview.group_map_mode", "同步模式"),
+        groupMap.authoritative
+          ? t("views.overview.authoritative_on", "以配置为准")
+          : t("views.overview.authoritative_off", "增量添加")],
+      [t("views.overview.map_errors", "映射问题"), groupMap.errors || 0]
+    ]));
+
     panels.appendChild(panelCard(t("views.overview.cookie", "登录态"), [
       [t("views.overview.cookie", "登录态"),
         data.cookie_configured ? (data.cookie_masked || "***") : t("views.overview.cookie_none", "未配置（匿名模式）")],

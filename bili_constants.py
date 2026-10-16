@@ -239,6 +239,30 @@ BILI_EMOJI_TOKEN_NAMES: frozenset[str] = frozenset(
 #: 匹配任意中括号 token（用于再按白名单判断是否为表情）。
 RE_BRACKET_TOKEN = re.compile(r"\[([^\[\]\n]{1,60})\]")
 
+# ───────────────────────── 群屏蔽与群订阅映射（设置面板配置） ─────────────────────────
+#: 群号补全为完整会话 UMO 时使用的平台前缀（本插件仅支持 aiocqhttp）。
+DEFAULT_SESSION_PLATFORM = "aiocqhttp"
+GROUP_SESSION_PREFIX = f"{DEFAULT_SESSION_PLATFORM}:GroupMessage:"
+#: 屏蔽列表 / 映射表里的通配符（匹配全部会话）。
+SESSION_WILDCARD = "*"
+#: 群订阅映射表「自动同步区」的表头：其后的行由插件维护（可在面板直接编辑）。
+GROUP_MAP_AUTO_HEADER = "# ===== 以下为插件自动同步区（群内 /bili_sub 建立的映射，可直接编辑）====="
+#: 识别自动同步区表头（兼容手动改写过表头的情况）。
+RE_GROUP_MAP_AUTO_HEADER = re.compile(r"(?mi)^[ \t]*#[^\n]*(?:自动同步|auto[-_ ]?sync)[^\n]*$")
+#: 映射表文本长度上限与条目上限（防止超长配置拖慢解析）。
+MAX_GROUP_MAP_LEN = 20000
+MAX_GROUP_MAP_ENTRIES = 200
+#: 屏蔽列表条目上限。
+MAX_BLOCKED_GROUPS = 200
+#: 映射行分隔符：``=`` / ``=>`` / ``->`` / ``→``；也支持直接以空格分隔。
+RE_GROUP_MAP_SEP = re.compile(r"\s*(?:=>|->|\u2192|=)\s*")
+#: ``UID(过滤器...)`` 形式的映射项（括号取最外层，贪婪到行尾）。
+RE_GROUP_MAP_UID_FILTERS = re.compile(r"^(\d{1,20})\s*[(（\[]\s*(.*?)\s*[)）\]]$", re.DOTALL)
+#: 映射项里过滤器的分词分隔符（反引号包裹的过滤器内不切分）。
+GROUP_MAP_FILTER_SEP = ",;；、，"
+#: ``UID(过滤器...)`` 中过滤器之间的分隔符（与指令一致：空格/逗号）。
+RE_GROUP_MAP_FILTER_SPLIT = re.compile(r"[\s,，、;；]+")
+
 #: 配置默认值（同时用于 _conf_schema.json 与运行时兜底）。
 DEFAULT_POLL_INTERVAL_SECONDS = 300
 DEFAULT_TIMEOUT_SECONDS = 15
