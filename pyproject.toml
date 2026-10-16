@@ -40,7 +40,8 @@ exclude_also = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+# AstrBot >= 4.18 的 Requires-Python 为 >=3.12，插件实际运行下限即 3.12
+target-version = "py312"
 extend-exclude = [".venv", "data", "downloads"]
 
 [tool.ruff.lint]
@@ -72,7 +73,7 @@ ignore = [
 "tests/*" = ["RUF012"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 files = ["main.py", "bili_constants.py", "bili_helpers.py", "bili_logic.py", "bili_models.py"]
 ignore_missing_imports = true
 check_untyped_defs = true

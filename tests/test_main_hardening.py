@@ -348,13 +348,17 @@ class TestWebApiRegistration:
         assert plugin._web_api_registered is False
 
     async def test_handler_returns_json_payload(self, plugin_factory):
+        """两种形态都要一致：4.29 走 json_response（Response.body），4.18 直接返回同构 dict。"""
         ctx = FakeContext()
         plugin = plugin_factory({}, context=ctx)
         response = await plugin._web_status_handler()
-        body = json.loads(bytes(response.body).decode("utf-8"))
+        raw = getattr(response, "body", response)
+        if isinstance(raw, (bytes, bytearray)):
+            raw = bytes(raw).decode("utf-8")
+        body = raw if isinstance(raw, dict) else json.loads(raw)
         assert body["status"] == "ok"
         assert body["data"]["plugin"] == C.PLUGIN_NAME
-        assert response.status_code == 200
+        assert getattr(response, "status_code", 200) == 200
 
     async def test_handler_falls_back_without_web_module(self, plugin_factory, monkeypatch):
         import builtins
@@ -368,7 +372,9 @@ class TestWebApiRegistration:
             return real_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", fake_import)
-        assert (await plugin._web_status_handler())["plugin"] == C.PLUGIN_NAME
+        fallback = await plugin._web_status_handler()
+        assert fallback["status"] == "ok"
+        assert fallback["data"]["plugin"] == C.PLUGIN_NAME
 
 
 class TestLifecycle:

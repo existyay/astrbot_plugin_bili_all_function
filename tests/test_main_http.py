@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from types import SimpleNamespace
 
@@ -37,7 +36,7 @@ class TestClassifyExc:
         assert M.BiliAllPlugin._classify_exc(self._err(status)) == (cat, retryable)
 
     def test_other_errors(self):
-        assert M.BiliAllPlugin._classify_exc(asyncio.TimeoutError()) == ("timeout", True)
+        assert M.BiliAllPlugin._classify_exc(TimeoutError()) == ("timeout", True)
         assert M.BiliAllPlugin._classify_exc(aiohttp.ClientConnectionError()) == ("network", True)
         assert M.BiliAllPlugin._classify_exc(aiohttp.ClientPayloadError()) == ("network", True)
         assert M.BiliAllPlugin._classify_exc(ValueError("x")) == ("unknown", False)
@@ -170,7 +169,7 @@ class TestRequest:
 
         def responder(_method, _url):
             calls["n"] += 1
-            return asyncio.TimeoutError()
+            return TimeoutError()
 
         plugin = plugin_factory(
             {"subscription": {"http_retry_count": 1, "http_retry_delay_seconds": 0}}, handler=route(("api", responder))

@@ -329,8 +329,7 @@ class TestReleaseAssets:
             assert re.match(r"^[A-Za-z0-9_.\-\[\]]+\s*[<>=!~]", line), line
 
     def test_pyproject_declares_coverage_gate(self):
-        # tomllib 自 Python 3.11 起进入标准库；3.10 上跳过该断言（CI 已覆盖 3.12）
-        tomllib = pytest.importorskip("tomllib")
+        import tomllib
 
         with (ROOT / "pyproject.toml").open("rb") as fp:
             data = tomllib.load(fp)
@@ -338,6 +337,35 @@ class TestReleaseAssets:
         assert cov["fail_under"] >= 95
         assert data["tool"]["coverage"]["run"]["branch"] is True
         assert "tests" in data["tool"]["pytest"]["ini_options"]["testpaths"]
+
+    def test_python_floor_is_consistent(self):
+        """CI 矩阵下限、ruff target-version、mypy python_version 必须一致。
+
+        三处都是「插件可运行的最低 Python 版本」，任何一处漂移都会让静态检查
+        与真实运行环境脱节（AstrBot >= 4.18 的 Requires-Python 为 >=3.12）。
+        """
+        import tomllib
+
+        import yaml
+
+        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+        matrix = workflow["jobs"]["test"]["strategy"]["matrix"]["python-version"]
+        floor = min(matrix, key=lambda value: tuple(int(part) for part in value.split(".")))
+        with (ROOT / "pyproject.toml").open("rb") as fp:
+            pyproject = tomllib.load(fp)
+        assert floor == "3.12", f"CI 矩阵下限为 {floor}"
+        assert pyproject["tool"]["ruff"]["target-version"] == "py" + floor.replace(".", "")
+        assert pyproject["tool"]["mypy"]["python_version"] == floor
+
+    def test_declared_astrbot_floor_is_tested_in_ci(self):
+        """metadata.yaml 声明的最低 AstrBot 版本必须真的在 CI 中被测过（兼容性任务）。"""
+        import yaml
+
+        metadata = yaml.safe_load((ROOT / "metadata.yaml").read_text(encoding="utf-8"))
+        minimum = re.search(r"(\d+\.\d+)", str(metadata["astrbot_version"]))
+        assert minimum, metadata["astrbot_version"]
+        ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        assert f"astrbot=={minimum.group(1)}.*" in ci, f"CI 未覆盖最低版本 {minimum.group(1)}"
 
 
 class TestRepositoryHygiene:

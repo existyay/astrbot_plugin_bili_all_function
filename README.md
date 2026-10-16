@@ -8,7 +8,7 @@
 ![astrbot](https://img.shields.io/badge/AstrBot-%3E%3D4.18-ff69b4)
 ![ruff](https://img.shields.io/badge/lint-ruff-261230)
 ![mypy](https://img.shields.io/badge/types-mypy-blue)
-![tests](https://img.shields.io/badge/tests-597%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-599%20passed-brightgreen)
 
 一个聚焦 **B站（bilibili）** 的 AstrBot 插件：链接解析 + UP主动态订阅 + 直播推送。
 
@@ -28,7 +28,7 @@
 - **插件页面**：Dashboard 内嵌 `views/overview` 视图，可视化查看运行状态、订阅量与请求统计。
 - **可观测性**：`/bili_state` 一键自检，并输出请求、推送、下载等运行统计；内置健康快照 API。
 - **安全加固**：Cookie 出网域名白名单 + 全链路脱敏 + 输入长度/正则护栏（见 [SECURITY.md](./SECURITY.md)）。
-- **完整测试**：597 个离线用例，语句覆盖率 100%、整体覆盖率约 99.9%，并带 AstrBot 合规自检。
+- **完整测试**：599 个离线用例，语句覆盖率 100%、整体覆盖率约 99.9%，并带 AstrBot 合规自检。
 
 ## 兼容性
 
@@ -36,7 +36,7 @@
 | --- | --- |
 | AstrBot | `>= 4.18`（已适配 4.29 的插件规范：不再使用已废弃的 `@register`，元数据由 `metadata.yaml` 提供，插件页面走 `views/` 约定） |
 | 平台 | `aiocqhttp`（OneBot v11 / QQ） |
-| Python | 3.10+ |
+| Python | 3.12+（AstrBot ≥ 4.18 的 `Requires-Python` 即为 `>=3.12`，插件随之以此为下限） |
 
 > 插件会对宿主能力做**能力探测**：`register_web_api`、插件页面、i18n 等接口不存在时自动跳过，
 > 因此在 4.18 与 4.29 上均可正常加载。
@@ -191,7 +191,8 @@
 ```
 
 > 返回值中**不会**出现完整 Cookie；该接口挂载在 AstrBot 面板的 `/api/v1/plugins/extensions/...` 下，
-> 沿用面板的登录态与插件权限校验。
+> 沿用面板的登录态与插件权限校验。AstrBot 4.18~4.28 没有 `astrbot.api.web`，此时接口会返回
+> **完全同构的 dict**（同样是 `{"status": "ok", "data": {...}}`），调用方无需区分版本。
 
 ## 安全与隐私
 
@@ -206,7 +207,8 @@
 
 | 检查 | 命令 | 现状 |
 | --- | --- | --- |
-| 单元测试 + 覆盖率门禁（≥95%） | `pytest` | 597 passed，99.9% |
+| 单元测试 + 覆盖率门禁（≥95%） | `pytest` | 599 passed，99.9% |
+| 最低支持版本兼容性 | `pytest tests --ignore=tests/test_compliance.py`（对 AstrBot 4.18） | 565 passed |
 | 静态检查（ruff，生产级规则集） | `ruff check .` | 通过 |
 | 代码风格 | `ruff format --check .` | 通过 |
 | 类型检查（mypy） | `mypy` | 通过（5 个源码模块，零错误） |

@@ -50,7 +50,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
+        # AstrBot >= 4.18 本身要求 Python >= 3.12（astrbot 的 Requires-Python），
+        # 因此插件可运行的下限就是 3.12；这里额外覆盖最新稳定版 3.13。
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
@@ -78,6 +80,26 @@ jobs:
       - name: Check the committed coverage badge is up to date
         if: matrix.python-version == '3.12'
         run: python scripts/gen_badge.py --check
+
+  compat-min-astrbot:
+    name: Compatibility (AstrBot 4.18, minimum supported)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install minimum supported AstrBot
+        run: |
+          python -m pip install --upgrade pip
+          pip install "astrbot==4.18.*" -r requirements.txt pytest pytest-asyncio
+
+      - name: Runtime tests against the declared minimum version
+        # tests/test_compliance.py 直接探测 4.29 的内部实现，只在最新版任务里跑
+        run: pytest tests --ignore=tests/test_compliance.py -o addopts="" -p no:cacheprovider
 
   compliance:
     name: AstrBot plugin marketplace compliance

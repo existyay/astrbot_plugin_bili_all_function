@@ -43,7 +43,7 @@ python scripts/check_release.py       # 发布前一键门禁（上面几项的�
 
 ## 代码规范
 
-- **Python 3.10+**，`from __future__ import annotations`，类型注解尽量完整；
+- **Python 3.12+**（AstrBot ≥ 4.18 的 `Requires-Python` 为 `>=3.12`），`from __future__ import annotations`，类型注解尽量完整；
 - 代码风格由 `ruff format` 决定（行宽 120），提交前请执行
   `ruff format .`（`pre-commit` 也会自动执行）；
 - 静态检查规则见 `pyproject.toml` 的 `[tool.ruff.lint]`：`E,F,W,I,UP,B,C4,SIM,RUF,PIE,RET,BLE,ASYNC`；
@@ -68,8 +68,10 @@ python scripts/check_release.py       # 发布前一键门禁（上面几项的�
 3. 推送前执行 `python scripts/check_release.py`，确保与 CI 一致；
 4. PR 描述中请包含：变更点、验证方式（贴出命令与结果）、是否影响已有配置或订阅数据。
 
-CI 会执行：`ruff check`、`ruff format --check`、`mypy`、Python 3.10/3.12 双版本 `pytest`
-（含覆盖率与徽章一致性校验）、AstrBot 合规自检与元数据校验。
+CI 会执行：`ruff check`、`ruff format --check`、`mypy`、Python 3.12/3.13 双版本 `pytest`
+（含覆盖率与徽章一致性校验）、AstrBot 合规自检与元数据校验，以及
+**最低支持版本兼容任务**（安装 `astrbot==4.18.*` 跑一遍运行时测试，
+`tests/test_compliance.py` 只针对最新版 API 探测，故在该任务中排除）。
 
 ## 报告问题
 

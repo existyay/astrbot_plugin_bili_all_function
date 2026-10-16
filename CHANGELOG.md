@@ -66,17 +66,22 @@
   `.astrbot-plugin/i18n/{zh-CN,en-US}.json` 多语言文案，遵循 AstrBot 4.29 插件页面契约。
 - **发布资产**：新增 `logo.png`（512×512 PNG，< 1 MB）、`SECURITY.md`、`CONTRIBUTING.md`
   与 `scripts/check_release.py`（发布前一键门禁）。
+- **版本兼容**：声明的最低版本 AstrBot 4.18 通过独立 CI 任务真实安装并跑通运行时测试（565 项）；
+  在没有 `astrbot.api.web` 的 4.18~4.28 上，插件 Web API 返回与 4.29 完全同构的
+  `{"status": "ok", "data": {...}}`，调用方无需区分版本。
+- **运行环境下限**：AstrBot ≥ 4.18 的 `Requires-Python` 为 `>=3.12`，因此 Python 下限、CI 矩阵、
+  ruff `target-version` 与 mypy `python_version` 统一为 3.12（并由合规测试锁定一致性）。
 
 ### 工程化
 
 - 测试：新增 `tests/test_compliance.py`（元数据 / 配置 schema / i18n / 插件页面 / 发布资产合规）、
   `tests/test_helpers_security.py`（脱敏与输入校验）与 `tests/test_main_hardening.py`
-  （节流、上限、统计、健康快照、Web API、生命周期）；测试数达 **597**，整体覆盖率 **99.9%**。
+  （节流、上限、统计、健康快照、Web API、生命周期）；测试数达 **599**，整体覆盖率 **99.9%**。
 - 静态检查：ruff 规则集扩展到 `E,F,W,I,UP,B,C4,SIM,RUF,PIE,RET,BLE,ASYNC` 并强制 `ruff format`；
   新增 mypy 配置（5 个源码模块零错误）。
-- CI：新增 `typecheck` 与 `compliance` 任务，`test` 任务改为校验徽章一致性
-  （`python scripts/gen_badge.py --check`）。
-- 新增 `.pre-commit-config.yaml`（ruff / mypy / 元数据 / 合规 / 徽章）。
+- CI：新增 `typecheck`、`compliance` 与 `compat-min-astrbot`（AstrBot 4.18 最低版本兼容）任务，
+  `test` 任务在 Python 3.12 / 3.13 上运行并校验徽章一致性（`python scripts/gen_badge.py --check`）。
+- 新增 `.pre-commit-config.yaml`（ruff / mypy / 元数据 / 合规 / 页面冒烟 / 徽章）。
 
 ## [v0.2.1]
 

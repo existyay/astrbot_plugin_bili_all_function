@@ -366,11 +366,12 @@ class BiliAllPlugin(Star):
 
     async def _web_status_handler(self, **_: Any) -> Any:
         """插件页面调用入口：返回脱敏后的运行状态 JSON。"""
+        payload = {"status": "ok", "data": self.health_snapshot()}
         try:
             from astrbot.api.web import json_response
-        except ImportError:  # pragma: no cover - 缺失时退回普通 dict
-            return self.health_snapshot()
-        return json_response({"status": "ok", "data": self.health_snapshot()})
+        except ImportError:  # pragma: no cover - 4.18 等旧版本没有该模块，退回同构 dict
+            return payload
+        return json_response(payload)
 
     def health_snapshot(self) -> dict[str, Any]:
         """运行状态快照（只读、已脱敏，供插件页面 / 自检 / 监控使用）。"""
@@ -694,7 +695,7 @@ class BiliAllPlugin(Star):
                 self.stats["http_failures"] += 1
                 self.logger.warning("响应体异常[%s]: %s", scene, exc)
                 break
-            except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError) as exc:
+            except (aiohttp.ClientError, TimeoutError) as exc:
                 if isinstance(exc, aiohttp.ClientResponseError):
                     code = int(getattr(exc, "status", 0) or 0)
                     if silent_codes and code in silent_codes:
@@ -1106,7 +1107,7 @@ class BiliAllPlugin(Star):
                 return total
             except ValueError:
                 raise
-            except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError) as exc:
+            except (aiohttp.ClientError, TimeoutError, OSError) as exc:
                 cat, retryable = self._classify_exc(exc)
                 self.logger.warning("下载失败[%s] %d/%d: %s", cat, att, max_att, exc)
                 with suppress(OSError):  # pragma: no cover - 删除失败不影响主流程
@@ -1171,7 +1172,7 @@ class BiliAllPlugin(Star):
         except ValueError as exc:
             save_path.unlink(missing_ok=True)
             return None, str(exc)
-        except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError, RuntimeError) as exc:
+        except (aiohttp.ClientError, TimeoutError, OSError, RuntimeError) as exc:
             save_path.unlink(missing_ok=True)
             return None, f"下载失败: {exc}"
 
@@ -1210,7 +1211,7 @@ class BiliAllPlugin(Star):
                 [Comp.Video.fromFileSystem(str(video_path.resolve()))],
                 "video_download",
             )
-        except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError, RuntimeError) as exc:
+        except (aiohttp.ClientError, TimeoutError, OSError, RuntimeError) as exc:
             self.logger.warning("发送下载视频失败: %s", exc)
             await self._safe_send(
                 event.unified_msg_origin,
