@@ -12,7 +12,7 @@ import re
 PLUGIN_NAME = "astrbot_plugin_bili_all_function"
 PLUGIN_AUTHOR = "existyay"
 PLUGIN_DISPLAY_NAME = "bili_all"
-PLUGIN_VERSION = "0.3.0"
+PLUGIN_VERSION = "0.3.1"
 PLUGIN_REPO = "https://github.com/existyay/astrbot_plugin_bili_all_function"
 PLUGIN_DESC = "B站链接解析 + UP主动态订阅 + 直播推送。"
 

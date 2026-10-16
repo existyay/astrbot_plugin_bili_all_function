@@ -120,10 +120,18 @@ function lookup(key) {
   return key.split(".").reduce((node, part) => (node == null ? undefined : node[part]), locale);
 }
 
+// 版本号从 metadata.yaml 读取，免得每次发版都要改这个冒烟脚本
+const SAMPLE_VERSION = /^\s*version:\s*v?([0-9][^\s#]*)/m.exec(
+  readFileSync(join(ROOT, "metadata.yaml"), "utf8"),
+)?.[1];
+if (!SAMPLE_VERSION) {
+  throw new Error("无法从 metadata.yaml 解析 version");
+}
+
 const snapshot = {
   plugin: "astrbot_plugin_bili_all_function",
   display_name: "bili_all",
-  version: "0.3.0",
+  version: SAMPLE_VERSION,
   uptime_seconds: 3725,
   healthy: true,
   poll_running: true,
@@ -220,7 +228,7 @@ check(metricsText.includes("128"), "请求数未渲染");
 check(panelsText.includes("SESSDATA=abcd***"), "Cookie 掩码未渲染");
 check(!panelsText.includes("SESSDATA=abcdef"), "页面泄露了完整 Cookie");
 check(panelsText.includes("300秒"), "轮询周期未渲染");
-check(footerText.includes("0.3.0"), "版本号未渲染");
+check(footerText.includes(SAMPLE_VERSION), "版本号未渲染");
 check(ids.get("error").hidden !== false || !ids.get("error").textContent, "错误框不应显示");
 
 if (failures.length > 0) {

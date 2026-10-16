@@ -3,7 +3,7 @@
 <div align="center">
 
 ![coverage](docs/badges/coverage.svg)
-![version](https://img.shields.io/badge/version-v0.3.0-blue)
+![version](https://img.shields.io/badge/version-v0.3.1-blue)
 ![license](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![astrbot](https://img.shields.io/badge/AstrBot-%3E%3D4.18-ff69b4)
 ![ruff](https://img.shields.io/badge/lint-ruff-261230)
@@ -164,7 +164,7 @@
   "data": {
     "plugin": "astrbot_plugin_bili_all_function",
     "display_name": "bili_all",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "uptime_seconds": 812,
     "healthy": true,
     "poll_running": true,
@@ -298,7 +298,7 @@ python scripts/live_check.py 946974  # 联网联调：真实拉取动态并打�
 <details>
 <summary>订阅后收不到最新动态？</summary>
 
-v0.3.0 已修复该问题（置顶动态锚点错误 + 未回溯最新动态）。
+v0.3.0 起已修复该问题（置顶动态锚点错误 + 未回溯最新动态）。
 请升级后删除并重新订阅一次，让锚点重新对齐。
 若仍异常，请先执行 `/bili_sub_test <UID>` 看能否抓到最新动态。
 </details>

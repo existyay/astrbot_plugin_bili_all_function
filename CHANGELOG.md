@@ -3,6 +3,22 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.3.1] - 2026-10-16
+
+### 修复
+
+- **插件 Web API 返回契约统一**：4.18~4.28 没有 `astrbot.api.web`，此前会退回裸快照 dict，
+  与 4.29 的 `{"status": "ok", "data": {...}}` 不一致；现在两种版本返回完全同构的 JSON，
+  外部监控与插件页面无需按版本分支。
+
+### 变更
+
+- **运行环境下限修正为 Python 3.12**：AstrBot ≥ 4.18 的 `Requires-Python` 即为 `>=3.12`，
+  Python 下限、CI 矩阵、ruff `target-version`、mypy `python_version` 统一为 3.12
+  （新增合规测试锁定三处一致性）；`asyncio.TimeoutError` 等 3.11 起已等价的内建别名同步清理。
+- **最低支持版本纳入 CI**：新增 `compat-min-astrbot` 任务，真实安装声明的最低版本
+  `astrbot==4.18.*` 并跑通运行时测试，避免 `astrbot_version` 声明与实际能力脱节。
+
 ## [v0.3.0] - 2026-10-16
 
 ### 修复
@@ -66,11 +82,6 @@
   `.astrbot-plugin/i18n/{zh-CN,en-US}.json` 多语言文案，遵循 AstrBot 4.29 插件页面契约。
 - **发布资产**：新增 `logo.png`（512×512 PNG，< 1 MB）、`SECURITY.md`、`CONTRIBUTING.md`
   与 `scripts/check_release.py`（发布前一键门禁）。
-- **版本兼容**：声明的最低版本 AstrBot 4.18 通过独立 CI 任务真实安装并跑通运行时测试（565 项）；
-  在没有 `astrbot.api.web` 的 4.18~4.28 上，插件 Web API 返回与 4.29 完全同构的
-  `{"status": "ok", "data": {...}}`，调用方无需区分版本。
-- **运行环境下限**：AstrBot ≥ 4.18 的 `Requires-Python` 为 `>=3.12`，因此 Python 下限、CI 矩阵、
-  ruff `target-version` 与 mypy `python_version` 统一为 3.12（并由合规测试锁定一致性）。
 
 ### 工程化
 
@@ -79,8 +90,8 @@
   （节流、上限、统计、健康快照、Web API、生命周期）；测试数达 **599**，整体覆盖率 **99.9%**。
 - 静态检查：ruff 规则集扩展到 `E,F,W,I,UP,B,C4,SIM,RUF,PIE,RET,BLE,ASYNC` 并强制 `ruff format`；
   新增 mypy 配置（5 个源码模块零错误）。
-- CI：新增 `typecheck`、`compliance` 与 `compat-min-astrbot`（AstrBot 4.18 最低版本兼容）任务，
-  `test` 任务在 Python 3.12 / 3.13 上运行并校验徽章一致性（`python scripts/gen_badge.py --check`）。
+- CI：新增 `typecheck` 与 `compliance` 任务，`test` 任务同时校验徽章一致性
+  （`python scripts/gen_badge.py --check`）。
 - 新增 `.pre-commit-config.yaml`（ruff / mypy / 元数据 / 合规 / 页面冒烟 / 徽章）。
 
 ## [v0.2.1]
