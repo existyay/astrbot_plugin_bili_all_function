@@ -1,0 +1,75 @@
+name: Bug 反馈
+description: 插件运行异常、推送不对或解析失败
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前请先确认：
+        - 已升级到最新版本（见 `metadata.yaml` 的 `version`）；
+        - 已用 `/bili_state` 自检过；
+        - **请对 Cookie 脱敏**（`SESSDATA=abcd***`），不要粘贴完整登录态。
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: 插件版本
+      description: "metadata.yaml 中的 version，或 /bili_state 输出里的版本号"
+      placeholder: v0.3.0
+    validations:
+      required: true
+
+  - type: input
+    id: astrbot-version
+    attributes:
+      label: AstrBot 版本
+      placeholder: v4.29.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台适配器
+      options:
+        - aiocqhttp (OneBot v11 / QQ)
+        - 其他（请在补充说明中写明）
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述
+      description: 实际结果 vs 期望结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 发送 /bili_sub 703007996
+        2. 等待一轮轮询
+        3. 没有收到推送
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志（已脱敏）
+      description: "AstrBot 控制台中与本插件相关的日志，注意删除 Cookie"
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: state
+    attributes:
+      label: /bili_state 输出（已脱敏）
+      render: text
+    validations:
+      required: false

@@ -1,0 +1,58 @@
+{
+  "metadata": {
+    "display_name": "Bilibili All-in-One",
+    "short_desc": "Bilibili link parsing, UP dynamics subscription and live alerts",
+    "desc": "Parse Bilibili video links (BV/av/b23/QQ mini-program cards) and reply with video info, optionally download and send the video; subscribe to UP dynamics and live-stream alerts with type and regex filters."
+  },
+  "commands": {
+    "bili_sub": "Subscribe to a UP's dynamics with optional type/regex filters",
+    "bili_sub_del": "Unsubscribe the given UID",
+    "bili_sub_list": "List subscriptions of the current session",
+    "bili_sub_test": "Preview dynamic fetching and filtering without subscribing",
+    "bili_state": "Plugin self-check (config, cookie, subscriptions, runtime stats)",
+    "bili_global_sub": "Admin: add a subscription for another session",
+    "bili_global_del": "Admin: remove a subscription of another session",
+    "bili_global_list": "Admin: list every session subscription"
+  },
+  "views": {
+    "overview": {
+      "title": "Bilibili Plugin Overview",
+      "subtitle": "Runtime status, subscription scale and feature switches",
+      "loading": "Loading runtime status…",
+      "refresh": "Refresh",
+      "auto_refresh": "Auto refresh (30s)",
+      "status_ok": "Healthy",
+      "status_degraded": "Polling stopped",
+      "status_unknown": "Unknown",
+      "uptime": "Uptime",
+      "sessions": "Sessions",
+      "subscriptions": "Subscriptions",
+      "requests": "HTTP requests",
+      "requests_failed": "{n} failed",
+      "requests_silent": "{n} soft-degraded",
+      "dynamic_pushes": "Dynamic pushes",
+      "live_pushes": "Live pushes",
+      "downloads": "Video downloads",
+      "send_failures": "Send failures",
+      "poll_cycles": "Poll cycles",
+      "features": "Features",
+      "feature_parse": "Link parsing",
+      "feature_video_info": "Video info reply",
+      "feature_download": "Download & send",
+      "feature_llm_tool": "LLM tool",
+      "poll": "Polling strategy",
+      "poll_interval": "Interval",
+      "poll_concurrency": "UID concurrency",
+      "poll_dynamic_limit": "Push limit per round",
+      "poll_throttle": "Request throttle",
+      "cookie": "Session",
+      "cookie_none": "Not configured (anonymous)",
+      "data_version": "Data version",
+      "seconds": "s",
+      "items": "",
+      "times": "x",
+      "error": "Failed to load status: {message}",
+      "bridge_missing": "AstrBot panel bridge is unavailable. Open this page from the plugin page inside the dashboard."
+    }
+  }
+}

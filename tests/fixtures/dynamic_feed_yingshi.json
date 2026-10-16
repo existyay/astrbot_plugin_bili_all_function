@@ -1,0 +1,1118 @@
+{
+ "code": 0,
+ "message": "0",
+ "data": {
+  "has_more": true,
+  "offset": "1253340283857272951",
+  "items": [
+   {
+    "id_str": "1259726024084553814",
+    "type": "DYNAMIC_TYPE_AV",
+    "visible": true,
+    "basic": {
+     "rid_str": "117449252934980",
+     "rtype": 8
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1792141221,
+       "pub_text": "40分钟前 · 投稿了视频",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_ARCHIVE",
+       "dyn_archive": {
+        "aid": "117449252934980",
+        "bvid": "BV1meJ967EUu",
+        "cover": "http://i1.hdslb.com/bfs/archive/29c96d7294fc531d2df47844abb5c7dfa38230de.jpg",
+        "desc": "冷风一刮，人都快要站不住啦。降温别担心，都市立领棉服先备上。帅气保暖可机洗，一件承包整个秋冬～",
+        "duration_text": "00:41",
+        "title": "动态视频｜有话下来好好说！",
+        "stat": {
+         "play": "2.8万",
+         "danmaku": "24",
+         "like": "2433"
+        },
+        "badge": {
+         "bg_color": "var(--brand_pink, #FF6699",
+         "color": "var(--bg1, #FFFFFF)",
+         "text": "投稿视频"
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "117449252934980",
+        "comment_type": 1,
+        "count": 176,
+        "type": 2
+       },
+       "like": {
+        "count": 2433,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 5,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1259648667381399603",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1259648667381399603",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1792123210,
+       "pub_text": "5小时前",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "恭喜@小蚂蚁和小鱼@鲸鱼宝座@wuli雯雯雯等100位同学中奖，已私信通知，详情请点击抽奖查看。",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "恭喜",
+         "orig_text": "恭喜"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@小蚂蚁和小鱼",
+         "orig_text": "@小蚂蚁和小鱼",
+         "rid": "251364450"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@鲸鱼宝座",
+         "orig_text": "@鲸鱼宝座",
+         "rid": "1298192108"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@wuli雯雯雯",
+         "orig_text": "@wuli雯雯雯",
+         "rid": "22586959"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "等100位同学中奖，已私信通知，详情请点击抽奖查看。",
+         "orig_text": "等100位同学中奖，已私信通知，详情请点击抽奖查看。"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1248632213698772997",
+         "type": "DYNAMIC_TYPE_DRAW",
+         "visible": true,
+         "basic": {
+          "rid_str": "409316495",
+          "rtype": 2
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1789558242,
+            "pub_text": "",
+            "user": {
+             "name": "影视飓风",
+             "mid": 946974,
+             "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DESC",
+           "module_desc": {
+            "text": "互动抽奖  这次我们准备了总共100台新的iPhone！！祝大家好运～ \n【转发+关注】\n一等奖：抽10人送iPhone Duo\n二等奖：抽10人送iPhone 18 Pro Max\n三等奖：抽80人送iPhone 18 Pro",
+            "rich_text_nodes": [
+             {
+              "type": "RICH_TEXT_NODE_TYPE_LOTTERY",
+              "text": "互动抽奖",
+              "orig_text": "互动抽奖",
+              "rid": "425296",
+              "jump_url": "//t.bilibili.com/lottery/h5/index/#/result?business_type=1&business_id=1248632213698772997&isWeb=1"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "  这次我们准备了总共100台新的iPhone！！祝大家好运～ \n【转发+关注】\n一等奖：抽10人送iPhone Duo\n二等奖：抽10人送iPhone 18 Pro Max\n三等奖：抽80人送iPhone 18 Pro",
+              "orig_text": "  这次我们准备了总共100台新的iPhone！！祝大家好运～ \n【转发+关注】\n一等奖：抽10人送iPhone Duo\n二等奖：抽10人送iPhone 18 Pro Max\n三等奖：抽80人送iPhone 18 Pro"
+             }
+            ]
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_DRAW",
+            "dyn_draw": {
+             "items": [
+              {
+               "src": "http://i0.hdslb.com/bfs/new_dyn/ec0eb1c56a5defae22eaccc485688399946974.jpg",
+               "width": 1500,
+               "height": 2000
+              }
+             ]
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1259648667381399603",
+        "comment_type": 17,
+        "count": 1089,
+        "type": 2
+       },
+       "like": {
+        "count": 3444,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 188,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1259354926024228881",
+    "type": "DYNAMIC_TYPE_AV",
+    "visible": true,
+    "basic": {
+     "rid_str": "117443632569077",
+     "rtype": 8
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1792054818,
+       "pub_text": "昨天 17:00 · 投稿了视频",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "看完这期视频，你还敢去玩吗？",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "看完这期视频，你还敢去玩吗？",
+         "orig_text": "看完这期视频，你还敢去玩吗？"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_ARCHIVE",
+       "dyn_archive": {
+        "aid": "117443632569077",
+        "bvid": "BV1KiJk67Ezw",
+        "cover": "http://i1.hdslb.com/bfs/archive/b6c3790c45a6355285e7960e4aca084b6e9b0b74.jpg",
+        "desc": "不知道你有没有被鬼屋吓过？为了让你尖叫，他们到底在背后做了什么？这一次我们受北京环球影城的邀请走进了他们的惊吓空间，想带你看看在惊吓之外，这里还藏着多少设计。如果你喜欢这期视频，请多多支持我们，并把视频分享给你的朋友们！",
+        "duration_text": "14:34",
+        "title": "让百万人尖叫的鬼屋？我们发现了这里的秘密……",
+        "stat": {
+         "play": "113.8万",
+         "danmaku": "2866",
+         "like": "6.9万"
+        },
+        "badge": {
+         "bg_color": "var(--brand_pink, #FF6699",
+         "color": "var(--bg1, #FFFFFF)",
+         "text": "投稿视频"
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "117443632569077",
+        "comment_type": 1,
+        "count": 2135,
+        "type": 2
+       },
+       "like": {
+        "count": 69278,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 256,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1257858988883574784",
+    "type": "DYNAMIC_TYPE_AV",
+    "visible": true,
+    "basic": {
+     "rid_str": "117421117609637",
+     "rtype": 8
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791706518,
+       "pub_text": "10月11日 · 投稿了视频",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_ARCHIVE",
+       "dyn_archive": {
+        "aid": "117421117609637",
+        "bvid": "BV1sEpj6yEcG",
+        "cover": "http://i0.hdslb.com/bfs/archive/367dd37feab77bb559769ba3ffcf6ad709b30e4f.jpg",
+        "desc": "秋冬换季不知道怎么穿？跟着宝剑嫂抄作业，简单穿也有型。",
+        "duration_text": "00:46",
+        "title": "动态视频｜第一次来影视飓风挑衣服，结果…有点超出预期！！！",
+        "stat": {
+         "play": "51万",
+         "danmaku": "173",
+         "like": "2.8万"
+        },
+        "badge": {
+         "bg_color": "var(--brand_pink, #FF6699",
+         "color": "var(--bg1, #FFFFFF)",
+         "text": "投稿视频"
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "117421117609637",
+        "comment_type": 1,
+        "count": 842,
+        "type": 2
+       },
+       "like": {
+        "count": 27583,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 38,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1257824581921538056",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1257824581921538056",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791698507,
+       "pub_text": "10月11日",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "非常期待这次的发布会，我们杭州见！",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "非常期待这次的发布会，我们杭州见！",
+         "orig_text": "非常期待这次的发布会，我们杭州见！"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1257460183994466309",
+         "type": "DYNAMIC_TYPE_DRAW",
+         "visible": true,
+         "basic": {
+          "rid_str": "411834077",
+          "rtype": 2
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1791613664,
+            "pub_text": "",
+            "user": {
+             "name": "Rokid官方账号",
+             "mid": 314358436,
+             "face": "https://i1.hdslb.com/bfs/face/536033c06e711a0d77e0270b90e21258855dfca2.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DESC",
+           "module_desc": {
+            "text": "小Ro又又又要开新品发布会啦👓\n还有人不知道吗（叉腰‼️ )\n\n这次，超宠你的小Ro抽👇\n3️⃣位粉丝盆友，来10月27日杭州现场！\n🔥 划重点：含机票/高铁+酒店\n\n参与方式：4连+💬分享你对Rokid的期待！\n获奖人数：3️⃣人\n开奖时间：10月19日\n小tips：越走心越眼熟越容易被pick哦～\n\n—\n\n🎁 另外，小Ro再抽1️⃣人送2000元京东卡！\n🙋 参与方式：关注+转发+评论+点赞\n📅 开奖时间：10.30 @我们爱抽奖 开\n注：开奖前请不要修改ID名称，否则可能联系不到哦～\n\n—\n\n温馨提示：中奖后3日内私信回复小Ro相关信息，逾期视为自动放弃哦～\n每一天都想做超宠你的小Rokid[打call]",
+            "rich_text_nodes": [
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "小Ro又又又要开新品发布会啦👓\n还有人不知道吗（叉腰‼️ )\n\n这次，超宠你的小Ro抽👇\n3️⃣位粉丝盆友，来10月27日杭州现场！\n🔥 划重点：含机票/高铁+酒店\n\n参与方式：4连+💬分享你对Rokid的期待！\n获奖人数：3️⃣人\n开奖时间：10月19日\n小tips：越走心越眼熟越容易被pick哦～\n\n—\n\n🎁 另外，小Ro再抽1️⃣人送2000元京东卡！\n🙋 参与方式：关注+转发+评论+点赞\n📅 开奖时间：10.30 ",
+              "orig_text": "小Ro又又又要开新品发布会啦👓\n还有人不知道吗（叉腰‼️ )\n\n这次，超宠你的小Ro抽👇\n3️⃣位粉丝盆友，来10月27日杭州现场！\n🔥 划重点：含机票/高铁+酒店\n\n参与方式：4连+💬分享你对Rokid的期待！\n获奖人数：3️⃣人\n开奖时间：10月19日\n小tips：越走心越眼熟越容易被pick哦～\n\n—\n\n🎁 另外，小Ro再抽1️⃣人送2000元京东卡！\n🙋 参与方式：关注+转发+评论+点赞\n📅 开奖时间：10.30 "
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_AT",
+              "text": "@我们爱抽奖",
+              "orig_text": "@我们爱抽奖",
+              "rid": "1100095791"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": " 开\n注：开奖前请不要修改ID名称，否则可能联系不到哦～\n\n—\n\n温馨提示：中奖后3日内私信回复小Ro相关信息，逾期视为自动放弃哦～\n每一天都想做超宠你的小Rokid",
+              "orig_text": " 开\n注：开奖前请不要修改ID名称，否则可能联系不到哦～\n\n—\n\n温馨提示：中奖后3日内私信回复小Ro相关信息，逾期视为自动放弃哦～\n每一天都想做超宠你的小Rokid"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_EMOJI",
+              "text": "[打call]",
+              "orig_text": "[打call]"
+             }
+            ]
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_DRAW",
+            "dyn_draw": {
+             "items": [
+              {
+               "src": "http://i0.hdslb.com/bfs/new_dyn/54973390a3c8b75b04f381caeea4885b314358436.png",
+               "width": 1086,
+               "height": 1448
+              }
+             ]
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1257824581921538056",
+        "comment_type": 17,
+        "count": 200,
+        "type": 2
+       },
+       "like": {
+        "count": 5038,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 265,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1257552804989370401",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1257552804989370401",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791635229,
+       "pub_text": "10月10日",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "这次我们和淘宝视频一起测了三款热门的 AI 学习机。说实话，现在的学习机和我们印象中的已经很不一样了，有些表现还真让我们有点意外，一起来看看！",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "这次我们和淘宝视频一起测了三款热门的 AI 学习机。说实话，现在的学习机和我们印象中的已经很不一样了，有些表现还真让我们有点意外，一起来看看！",
+         "orig_text": "这次我们和淘宝视频一起测了三款热门的 AI 学习机。说实话，现在的学习机和我们印象中的已经很不一样了，有些表现还真让我们有点意外，一起来看看！"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1257552804989370401",
+        "comment_type": 17,
+        "count": 124,
+        "type": 2
+       },
+       "like": {
+        "count": 6257,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 0,
+        "forbidden_msg": "源动态不见惹，不可以转发噢~",
+        "is_forbidden": true,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1257422285184172036",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1257422285184172036",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791604840,
+       "pub_text": "10月10日",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "[tv_微笑]大家中午好，来看看刚上不久的新节目～这次的怪东西你觉得哪个最怪？",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_EMOJI",
+         "text": "[tv_微笑]",
+         "orig_text": "[tv_微笑]"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "大家中午好，来看看刚上不久的新节目～这次的怪东西你觉得哪个最怪？",
+         "orig_text": "大家中午好，来看看刚上不久的新节目～这次的怪东西你觉得哪个最怪？"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1257128397776093190",
+         "type": "DYNAMIC_TYPE_AV",
+         "visible": true,
+         "basic": {
+          "rid_str": "117409121834906",
+          "rtype": 8
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1791536414,
+            "pub_text": "",
+            "user": {
+             "name": "影视飓风",
+             "mid": 946974,
+             "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DESC",
+           "module_desc": {
+            "text": "公司又多了不少怪东西？",
+            "rich_text_nodes": [
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "公司又多了不少怪东西？",
+              "orig_text": "公司又多了不少怪东西？"
+             }
+            ]
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_ARCHIVE",
+            "dyn_archive": {
+             "aid": "117409121834906",
+             "bvid": "BV1gHps6yEHL",
+             "cover": "http://i2.hdslb.com/bfs/archive/17b99efd39e024ca4e909bd42f027e3b2ee9ec44.jpg",
+             "desc": "众所周知，我们公司里总会出现一些奇怪的东西，从稀奇古怪的科技产品，到各种各样的摄影设备，这次我们甚至有了一架直升机？欢迎收看影视飓风怪东西分享9.0！如果你喜欢这期视频，请多多支持我们，并把视频分享给你的朋友们一起看看～",
+             "duration_text": "13:43",
+             "title": "影视飓风的直升机？怪东西分享9.0",
+             "stat": {
+              "play": "258.3万",
+              "danmaku": "1.3万",
+              "like": "15.6万"
+             },
+             "badge": {
+              "bg_color": "var(--brand_pink, #FF6699",
+              "color": "var(--bg1, #FFFFFF)",
+              "text": "投稿视频"
+             }
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1257422285184172036",
+        "comment_type": 17,
+        "count": 106,
+        "type": 2
+       },
+       "like": {
+        "count": 7476,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 8,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1257128397776093190",
+    "type": "DYNAMIC_TYPE_AV",
+    "visible": true,
+    "basic": {
+     "rid_str": "117409121834906",
+     "rtype": 8
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791536414,
+       "pub_text": "10月09日 · 投稿了视频",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "公司又多了不少怪东西？",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "公司又多了不少怪东西？",
+         "orig_text": "公司又多了不少怪东西？"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_ARCHIVE",
+       "dyn_archive": {
+        "aid": "117409121834906",
+        "bvid": "BV1gHps6yEHL",
+        "cover": "http://i2.hdslb.com/bfs/archive/17b99efd39e024ca4e909bd42f027e3b2ee9ec44.jpg",
+        "desc": "众所周知，我们公司里总会出现一些奇怪的东西，从稀奇古怪的科技产品，到各种各样的摄影设备，这次我们甚至有了一架直升机？欢迎收看影视飓风怪东西分享9.0！如果你喜欢这期视频，请多多支持我们，并把视频分享给你的朋友们一起看看～",
+        "duration_text": "13:43",
+        "title": "影视飓风的直升机？怪东西分享9.0",
+        "stat": {
+         "play": "258.3万",
+         "danmaku": "1.3万",
+         "like": "15.6万"
+        },
+        "badge": {
+         "bg_color": "var(--brand_pink, #FF6699",
+         "color": "var(--bg1, #FFFFFF)",
+         "text": "投稿视频"
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "117409121834906",
+        "comment_type": 1,
+        "count": 2956,
+        "type": 2
+       },
+       "like": {
+        "count": 155597,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 823,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1254562799070216199",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1254562799070216199",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1790939064,
+       "pub_text": "10月02日",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "这是我们一次全新的测试，期待未来能有更多朋友一同参与进来[tv_点赞]",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "这是我们一次全新的测试，期待未来能有更多朋友一同参与进来",
+         "orig_text": "这是我们一次全新的测试，期待未来能有更多朋友一同参与进来"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_EMOJI",
+         "text": "[tv_点赞]",
+         "orig_text": "[tv_点赞]"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1254438008747196457",
+         "type": "DYNAMIC_TYPE_AV",
+         "visible": true,
+         "basic": {
+          "rid_str": "117366977468932",
+          "rtype": 8
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1790910009,
+            "pub_text": "",
+            "user": {
+             "name": "飓多多StormCrew",
+             "mid": 1780480185,
+             "face": "https://i0.hdslb.com/bfs/face/5fad57003b0c7f22bbb377f1f19d86868210b71c.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DESC",
+           "module_desc": {
+            "text": "最终谁能为粉丝赢得30万元？",
+            "rich_text_nodes": [
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "最终谁能为粉丝赢得30万元？",
+              "orig_text": "最终谁能为粉丝赢得30万元？"
+             }
+            ]
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_ARCHIVE",
+            "dyn_archive": {
+             "aid": "117366977468932",
+             "bvid": "BV15far6dEjT",
+             "cover": "http://i1.hdslb.com/bfs/archive/4ad6f00ab0304645d1713c08f37e4c2699aed99f.jpg",
+             "desc": "这次我们邀请了24位百万粉博主参与一场挑战赛，五大关卡不断淘汰，最终获胜者将为自己的粉丝赢得30万元奖金，谁能获得胜利？和我们一起揭晓答案吧！如果喜欢本期节目，记得多多点赞支持我们！",
+             "duration_text": "29:52",
+             "title": "24位博主为粉丝争夺30万元！",
+             "stat": {
+              "play": "372.6万",
+              "danmaku": "2.8万",
+              "like": "39万"
+             },
+             "badge": {
+              "bg_color": "var(--brand_pink, #FF6699",
+              "color": "var(--bg1, #FFFFFF)",
+              "text": "投稿视频"
+             }
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1254562799070216199",
+        "comment_type": 17,
+        "count": 618,
+        "type": 2
+       },
+       "like": {
+        "count": 13117,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 33,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1253791869585850372",
+    "type": "DYNAMIC_TYPE_AV",
+    "visible": true,
+    "basic": {
+     "rid_str": "117359209682188",
+     "rtype": 8
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1790759568,
+       "pub_text": "09月30日 · 投稿了视频",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_ARCHIVE",
+       "dyn_archive": {
+        "aid": "117359209682188",
+        "bvid": "BV1GGaZ6AEzJ",
+        "cover": "http://i1.hdslb.com/bfs/archive/3d6ff3a5140e2ec4d94f8bc55e3abb4c10b01cda.jpg",
+        "desc": "新机到手，就怕磕磕碰碰，来！配上新手机壳\n四角吸能缓冲结构接住日常小意外，好看、好握、好放心～新手机的第一件装备来试试这个吧！",
+        "duration_text": "00:52",
+        "title": "动态视频｜拿到新手机0.01秒后……",
+        "stat": {
+         "play": "118.1万",
+         "danmaku": "267",
+         "like": "4.7万"
+        },
+        "badge": {
+         "bg_color": "var(--brand_pink, #FF6699",
+         "color": "var(--bg1, #FFFFFF)",
+         "text": "投稿视频"
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "117359209682188",
+        "comment_type": 1,
+        "count": 1735,
+        "type": 2
+       },
+       "like": {
+        "count": 47269,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 88,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1253417546005086274",
+    "type": "DYNAMIC_TYPE_AV",
+    "visible": true,
+    "basic": {
+     "rid_str": "117353287258480",
+     "rtype": 8
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1790672414,
+       "pub_text": "09月29日 · 投稿了视频",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "在墨西哥，我们认识了一群不摘面具的人。",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "在墨西哥，我们认识了一群不摘面具的人。",
+         "orig_text": "在墨西哥，我们认识了一群不摘面具的人。"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_ARCHIVE",
+       "dyn_archive": {
+        "aid": "117353287258480",
+        "bvid": "BV1yEaJ6CEUk",
+        "cover": "http://i1.hdslb.com/bfs/archive/3b22081ab5f604510f3420b6586332d44293c394.jpg",
+        "desc": "墨西哥有数百位蒙面摔跤手，有英雄也有反派。但他们都共同遵守一条铁律“擂台上面具被摘下，角色就此落幕”。所以我们带着好奇来到了墨西哥，想和你一起看墨西哥摔跤手的双面人生。如果你喜欢这期视频，请多多支持我们，并把视频分享给你的朋友们！",
+        "duration_text": "17:22",
+        "title": "面具比命还重要？墨西哥摔跤手的生活，有多疯狂？",
+        "stat": {
+         "play": "504.7万",
+         "danmaku": "6674",
+         "like": "27万"
+        },
+        "badge": {
+         "bg_color": "var(--brand_pink, #FF6699",
+         "color": "var(--bg1, #FFFFFF)",
+         "text": "投稿视频"
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "117353287258480",
+        "comment_type": 1,
+        "count": 3745,
+        "type": 2
+       },
+       "like": {
+        "count": 270434,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 777,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1253340283857272951",
+    "type": "DYNAMIC_TYPE_AV",
+    "visible": true,
+    "basic": {
+     "rid_str": "117352263849775",
+     "rtype": 8
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1790654425,
+       "pub_text": "09月29日 · 投稿了视频",
+       "user": {
+        "name": "影视飓风",
+        "mid": 946974,
+        "face": "https://i0.hdslb.com/bfs/face/c1733474892caa45952b2c09a89323157df7129a.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_ARCHIVE",
+       "dyn_archive": {
+        "aid": "117352263849775",
+        "bvid": "BV1eia76WEUw",
+        "cover": "http://i1.hdslb.com/bfs/archive/3abc6f874cb2e4bf5665b1f29900bbd70d9ab034.jpg",
+        "desc": "AI 模型疯狂迭代，到底强在哪？做创作该怎么选？ 第二节免费加餐课就会用 Seedance2.5 对比 2.0，拆解时长、参考素材、人物表演、动作、分辨率、音频参考等方面的差异， 看懂新版本到底如何拓宽你的创作上限，摸透不同模型的使用场景，所以期待我们课上见！",
+        "duration_text": "01:31",
+        "title": "动态视频｜影视飓风AI课程又双叒免费更新啦～",
+        "stat": {
+         "play": "26.8万",
+         "danmaku": "39",
+         "like": "1.8万"
+        },
+        "badge": {
+         "bg_color": "var(--brand_pink, #FF6699",
+         "color": "var(--bg1, #FFFFFF)",
+         "text": "投稿视频"
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "117352263849775",
+        "comment_type": 1,
+        "count": 201,
+        "type": 2
+       },
+       "like": {
+        "count": 18275,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 27,
+        "type": 1
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "_fixture": {
+  "uid": 946974,
+  "attempts": 2
+ }
+}

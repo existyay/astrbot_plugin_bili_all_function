@@ -1,0 +1,66 @@
+# 本地提交前钩子：与 CI 使用同一套检查，避免推送后才发现问题。
+# 安装（仅需一次）：pre-commit install
+# 手动全量执行：pre-commit run --all-files
+default_language_version:
+  python: python3.10
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]  # AstrBot 要求插件包（含元数据）不超过 1 MB
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        additional_dependencies: ["aiohttp>=3.9.0", "types-PyYAML"]
+        files: ^(main|bili_constants|bili_helpers|bili_logic|bili_models)\.py$
+        pass_filenames: false
+        args: ["--config-file=pyproject.toml"]
+
+  - repo: local
+    hooks:
+      - id: astrbot-metadata
+        name: 校验 AstrBot 元数据 / 配置 schema
+        entry: python scripts/check_metadata.py
+        language: system
+        pass_filenames: false
+        files: ^(metadata\.yaml|_conf_schema\.json|bili_constants\.py)$
+
+      - id: plugin-compliance
+        name: 插件市场合规自检
+        entry: python -m pytest tests/test_compliance.py -q --no-cov -p no:cacheprovider
+        language: system
+        pass_filenames: false
+        files: ^(metadata\.yaml|_conf_schema\.json|logo\.png|views/|\.astrbot-plugin/|requirements.*\.txt|pyproject\.toml)$
+
+      - id: plugin-view-smoke
+        name: 插件页面渲染冒烟（node）
+        entry: node scripts/check_view.mjs
+        language: system
+        pass_filenames: false
+        files: ^views/.*\.html$
+
+      - id: coverage-badge
+        name: 覆盖率徽章是否最新
+        entry: python scripts/gen_badge.py --check
+        language: system
+        pass_filenames: false
+        files: ^(main|bili_constants|bili_helpers|bili_logic|bili_models)\.py$

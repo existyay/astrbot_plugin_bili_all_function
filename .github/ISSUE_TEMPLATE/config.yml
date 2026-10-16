@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题（请勿公开提交）
+    url: https://github.com/existyay/astrbot_plugin_bili_all_function/security/advisories/new
+    about: 漏洞与凭据相关问题请按 SECURITY.md 私下报告
+  - name: 使用文档
+    url: https://github.com/existyay/astrbot_plugin_bili_all_function#readme
+    about: 安装、指令与配置说明见 README

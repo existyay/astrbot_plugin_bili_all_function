@@ -1,114 +1,444 @@
-"""AstrBot B站全功能插件：链接解析 + UP 主动态订阅 + 直播推送。"""
+"""AstrBot 插件：B站链接解析 + UP主动态订阅 + 直播推送。
+
+设计要点（适配 AstrBot 4.x 最新插件接口）：
+
+* 不再使用已废弃的 ``@register`` 装饰器，插件元数据统一由 ``metadata.yaml`` 提供；
+* 使用 ``Star`` 自带的 ``self.logger`` 插件级日志；
+* 数据目录通过 ``StarTools.get_data_dir(PLUGIN_NAME)`` 显式定位；
+* 主动推送使用 ``MessageChain`` / ``context.send_message``；
+* 管理员指令同时兼容 AstrBot 原生管理员身份（``event.is_admin()``）与配置白名单；
+* 额外提供 ``bili_video_info`` 函数调用工具（function-calling）。
+"""
+
 from __future__ import annotations
 
 import asyncio
 import json
+import os
+import random
 import re
 import time
-from dataclasses import asdict
+from collections.abc import AsyncGenerator, Sequence
+from contextlib import suppress
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 from urllib.parse import urlencode
 
 import aiohttp
 import astrbot.api.message_components as Comp
 from astrbot.api import AstrBotConfig, logger
-from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
-from astrbot.api.star import Context, Star, StarTools, register
+from astrbot.api.event import (
+    AstrMessageEvent,
+    MessageChain,
+    MessageEventResult,
+    filter,
+)
+from astrbot.api.star import Context, Star, StarTools
 
-try:
+try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
     from .bili_constants import (
-        QUALITY_TO_QN, RE_AV, RE_BV, RE_MESSAGE, RE_SHORT_LINK, RE_URL,
+        API_DYNAMIC_FEED,
+        API_LIVE_ROOM,
+        API_LIVE_STATUS,
+        API_NAV,
+        API_PLAYURL,
+        API_VIDEO_VIEW,
+        DEFAULT_DYNAMIC_LIMIT,
+        DEFAULT_EMPTY_RETRY_COUNT,
+        DEFAULT_EMPTY_RETRY_DELAY_SECONDS,
+        DEFAULT_HTTP_RETRY_COUNT,
+        DEFAULT_HTTP_RETRY_DELAY_SECONDS,
+        DEFAULT_MIN_REQUEST_INTERVAL_SECONDS,
+        DEFAULT_POLL_INTERVAL_SECONDS,
+        DEFAULT_QN,
+        DEFAULT_QUALITY_LABEL,
+        DEFAULT_RECENT_IDS_LIMIT,
+        DEFAULT_TIMEOUT_SECONDS,
+        DEFAULT_UID_CONCURRENCY,
+        DEFAULT_UID_TASK_GAP_SECONDS,
+        DEFAULT_VIDEO_MAX_DURATION_SECONDS,
+        DEFAULT_VIDEO_MAX_SIZE_MB,
+        DEFAULT_VIDEO_RETRY_COUNT,
+        DOWNLOAD_CHUNK_SIZE,
+        DYNAMIC_FEED_FEATURES,
+        DYNAMIC_SILENT_CODES,
+        DYNAMIC_SPACE_URL,
+        MAX_JSON_BYTES,
+        MAX_LLM_URL_LEN,
+        MAX_MESSAGE_SCAN_LEN,
+        MAX_SESSIONS,
+        MAX_SUBS_PER_SESSION,
+        PLUGIN_DISPLAY_NAME,
+        PLUGIN_NAME,
+        PLUGIN_VERSION,
+        QUALITY_TO_QN,
+        RE_AV,
+        RE_BV,
+        RE_MESSAGE,
+        RE_SHORT_LINK,
+        RE_URL,
+        RETRYABLE_HTTP,
+        SUBSCRIPTIONS_SCHEMA_KEY,
+        SUBSCRIPTIONS_SCHEMA_VERSION,
+        USER_AGENT,
         VALID_FILTER_TYPES,
+        WEB_API_STATUS_ROUTE,
     )
     from .bili_helpers import (
-        extract_links_and_ids, is_top_dynamic, normalize_modules,
-        parse_filter_args, parse_page_index, resolve_video_page,
+        compile_filter_patterns,
+        extract_links_and_ids,
+        format_bytes,
+        host_of,
+        is_trusted_host,
+        is_valid_uid,
+        mask_secret,
+        normalize_modules,
+        parse_filter_args,
+        parse_page_index,
+        resolve_video_page,
+        sanitize_cookie,
+        sanitize_filename,
+        validate_filter_patterns,
     )
     from .bili_logic import (
-        append_recent_id, build_dynamic_chain, build_uid_targets,
-        build_live_chain, build_video_chain, should_filter_dynamic,
+        append_recent_id,
+        build_dynamic_chain,
+        build_live_chain,
+        build_uid_targets,
+        build_video_chain,
+        build_video_text,
+        collect_new_dynamics,
+        latest_dynamic_id,
+        pick_push_batch,
+        should_filter_dynamic,
     )
     from .bili_models import Subscription
-except ImportError:
+except ImportError:  # pragma: no cover
     from bili_constants import (
-        QUALITY_TO_QN, RE_AV, RE_BV, RE_MESSAGE, RE_SHORT_LINK, RE_URL,
+        API_DYNAMIC_FEED,
+        API_LIVE_ROOM,
+        API_LIVE_STATUS,
+        API_NAV,
+        API_PLAYURL,
+        API_VIDEO_VIEW,
+        DEFAULT_DYNAMIC_LIMIT,
+        DEFAULT_EMPTY_RETRY_COUNT,
+        DEFAULT_EMPTY_RETRY_DELAY_SECONDS,
+        DEFAULT_HTTP_RETRY_COUNT,
+        DEFAULT_HTTP_RETRY_DELAY_SECONDS,
+        DEFAULT_MIN_REQUEST_INTERVAL_SECONDS,
+        DEFAULT_POLL_INTERVAL_SECONDS,
+        DEFAULT_QN,
+        DEFAULT_QUALITY_LABEL,
+        DEFAULT_RECENT_IDS_LIMIT,
+        DEFAULT_TIMEOUT_SECONDS,
+        DEFAULT_UID_CONCURRENCY,
+        DEFAULT_UID_TASK_GAP_SECONDS,
+        DEFAULT_VIDEO_MAX_DURATION_SECONDS,
+        DEFAULT_VIDEO_MAX_SIZE_MB,
+        DEFAULT_VIDEO_RETRY_COUNT,
+        DOWNLOAD_CHUNK_SIZE,
+        DYNAMIC_FEED_FEATURES,
+        DYNAMIC_SILENT_CODES,
+        DYNAMIC_SPACE_URL,
+        MAX_JSON_BYTES,
+        MAX_LLM_URL_LEN,
+        MAX_MESSAGE_SCAN_LEN,
+        MAX_SESSIONS,
+        MAX_SUBS_PER_SESSION,
+        PLUGIN_DISPLAY_NAME,
+        PLUGIN_NAME,
+        PLUGIN_VERSION,
+        QUALITY_TO_QN,
+        RE_AV,
+        RE_BV,
+        RE_MESSAGE,
+        RE_SHORT_LINK,
+        RE_URL,
+        RETRYABLE_HTTP,
+        SUBSCRIPTIONS_SCHEMA_KEY,
+        SUBSCRIPTIONS_SCHEMA_VERSION,
+        USER_AGENT,
         VALID_FILTER_TYPES,
+        WEB_API_STATUS_ROUTE,
     )
     from bili_helpers import (
-        extract_links_and_ids, is_top_dynamic, normalize_modules,
-        parse_filter_args, parse_page_index, resolve_video_page,
+        compile_filter_patterns,
+        extract_links_and_ids,
+        format_bytes,
+        host_of,
+        is_trusted_host,
+        is_valid_uid,
+        mask_secret,
+        normalize_modules,
+        parse_filter_args,
+        parse_page_index,
+        resolve_video_page,
+        sanitize_cookie,
+        sanitize_filename,
+        validate_filter_patterns,
     )
     from bili_logic import (
-        append_recent_id, build_dynamic_chain, build_uid_targets,
-        build_live_chain, build_video_chain, should_filter_dynamic,
+        append_recent_id,
+        build_dynamic_chain,
+        build_live_chain,
+        build_uid_targets,
+        build_video_chain,
+        build_video_text,
+        collect_new_dynamics,
+        latest_dynamic_id,
+        pick_push_batch,
+        should_filter_dynamic,
     )
     from bili_models import Subscription
 
-# ── 模块级常量 ──
-_RETRYABLE_HTTP = frozenset({408, 425, 429, 500, 502, 503, 504})
+#: 可重试的 HTTP 状态码（模块级别名，保持向后兼容的导入路径）。
+_RETRYABLE_HTTP = RETRYABLE_HTTP
+
+_STATUS_ICONS = {"ok": "✅", "warn": "⚠️", "fail": "❌"}
 
 
-# ═══════════════════════ 插件主体 ═══════════════════════
+def _status_icon(status: str) -> str:
+    return _STATUS_ICONS.get(status, _STATUS_ICONS["fail"])
 
-@register("astrbot_plugin_bili_all_function", "existyay", "B站链接解析与UP动态订阅", "0.2.0")
+
+def _fsync_dir(path: Path) -> None:
+    """尽力而为地 fsync 目录，确保 ``os.replace`` 的改名在断电后仍可见。
+
+    Windows 不允许以只读方式打开目录，故失败时静默忽略（不影响主流程）。
+    """
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+@dataclass(frozen=True)
+class ParsedUidArgs:
+    """命令参数解析结果（``error`` 非空表示过滤器非法）。"""
+
+    uid: int
+    filter_types: list[str]
+    filter_regex: list[str]
+    error: str = ""
+
+
 class BiliAllPlugin(Star):
+    """B站链接解析与UP主动态订阅插件。
+
+    指令：
+      /bili_sub <UID> [过滤器...]        订阅 UP 主动态
+      /bili_sub_del <UID>                取消订阅
+      /bili_sub_list                     查看当前会话订阅
+      /bili_sub_test <UID> [过滤器...]    测试动态抓取与过滤
+      /bili_state                        插件状态自检
+      /bili_global_sub <UMO> <UID> [...]  管理员：为指定会话订阅
+      /bili_global_del <UMO> [UID]        管理员：删除指定会话订阅
+      /bili_global_list                   管理员：查看全部订阅
+    """
 
     # ───────────────────── 生命周期 ─────────────────────
 
     def __init__(self, context: Context, config: AstrBotConfig | dict | None = None):
         super().__init__(context)
         self.context = context
-        self.config = config or context.get_config() or {}
+        # AstrBot >= 4.20 的 Star 会注入插件级 logger；旧版本回退到全局 logger。
+        self.logger = getattr(self, "logger", None) or logger
+        self.config: dict[str, Any] = dict(config) if config else {}
         self._poll_task: asyncio.Task | None = None
         self._running = False
+        self._started_at = time.time()
+        self._web_api_registered = False
+
+        # 运行统计（供 /bili_state 与插件页面展示，不落盘）
+        self.stats: dict[str, int] = dict.fromkeys(
+            (
+                "http_requests",
+                "http_failures",
+                "http_silent",
+                "poll_cycles",
+                "poll_errors",
+                "dynamic_pushes",
+                "live_pushes",
+                "downloads",
+                "download_bytes",
+                "send_failures",
+            ),
+            0,
+        )
+
+        # 请求节流（降低触发 B站风控的概率）
+        self._throttle_lock = asyncio.Lock()
+        self._last_request_at = 0.0
 
         # 配置默认值（会被 _refresh_config 覆盖）
         self.enable_bili_parse = True
-        self.poll_interval_seconds = 300
-        self.timeout_seconds = 15
-        self.dynamic_limit = 3
-        self.uid_task_gap_seconds = 1
-        self.recent_ids_limit = 20
+        self.send_video_info = True
+        self.enable_llm_tool = True
+        self.poll_interval_seconds = DEFAULT_POLL_INTERVAL_SECONDS
+        self.timeout_seconds = DEFAULT_TIMEOUT_SECONDS
+        self.dynamic_limit = DEFAULT_DYNAMIC_LIMIT
+        self.uid_task_gap_seconds = DEFAULT_UID_TASK_GAP_SECONDS
+        self.uid_concurrency = DEFAULT_UID_CONCURRENCY
+        self.recent_ids_limit = DEFAULT_RECENT_IDS_LIMIT
+        self.empty_retry_count = DEFAULT_EMPTY_RETRY_COUNT
+        self.empty_retry_delay_seconds = DEFAULT_EMPTY_RETRY_DELAY_SECONDS
+        self.http_retry_count = DEFAULT_HTTP_RETRY_COUNT
+        self.http_retry_delay_seconds = DEFAULT_HTTP_RETRY_DELAY_SECONDS
+        self.min_request_interval_seconds = DEFAULT_MIN_REQUEST_INTERVAL_SECONDS
         self.admin_ids: set[str] = set()
         self.enable_video_download = False
-        self.video_quality_label = "720P"
-        self.video_max_duration_seconds = 600
-        self.video_max_size_mb = 100
+        self.video_quality_label = DEFAULT_QUALITY_LABEL
+        self.video_max_duration_seconds = DEFAULT_VIDEO_MAX_DURATION_SECONDS
+        self.video_max_size_mb = DEFAULT_VIDEO_MAX_SIZE_MB
         self.video_auto_delete = True
-        self.video_retry_count = 2
+        self.video_retry_count = DEFAULT_VIDEO_RETRY_COUNT
         self.bili_cookie = ""
-        self.http_retry_count = 2
-        self.http_retry_delay_seconds = 0.35
         self._http_session: aiohttp.ClientSession | None = None
 
         self._refresh_config()
 
-        plugin_data_dir = Path(StarTools.get_data_dir())
+        plugin_data_dir = self._resolve_data_dir()
         self.data_path = plugin_data_dir / "subscriptions.json"
         self.video_cache_dir = plugin_data_dir / "cache" / "videos"
         self.subscriptions: dict[str, list[Subscription]] = {}
+        self.data_schema_version = SUBSCRIPTIONS_SCHEMA_VERSION
 
-    async def initialize(self):
+    def _resolve_data_dir(self) -> Path:
+        """定位插件数据目录（显式传入插件名，避免依赖调用栈推断）。"""
+        try:
+            return Path(StarTools.get_data_dir(PLUGIN_NAME))
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - 仅在宿主环境异常时触发
+            fallback = Path.cwd() / "data" / "plugin_data" / PLUGIN_NAME
+            logger.warning("获取插件数据目录失败，回退到 %s：%s", fallback, exc)
+            return fallback
+
+    async def initialize(self) -> None:
+        """插件启用时调用：加载订阅、建立会话、注册插件页面 API 并启动轮询。"""
+        self._started_at = time.time()
         self._load_subscriptions()
         await self._ensure_http_session()
+        self._register_web_api()
         self._running = True
-        self._poll_task = asyncio.create_task(self._poll_loop(), name="bili-dynamic-poll")
-        logger.info("BiliAll 插件初始化完成，订阅数: %d", self._sub_count())
+        self._start_poll_task()
+        self.logger.info(
+            "BiliAll 插件初始化完成：订阅 %d 个（会话 %d 个），轮询间隔 %ds，UID 并发 %d，下载发送 %s，Cookie %s",
+            self._sub_count(),
+            len(self.subscriptions),
+            self.poll_interval_seconds,
+            self.uid_concurrency,
+            "开启" if self.enable_video_download else "关闭",
+            "已配置" if self.bili_cookie else "未配置",
+        )
 
-    async def terminate(self):
-        self._running = False
+    def _register_web_api(self) -> None:
+        """注册只读状态接口，供插件页面（Views）调用。
+
+        旧版 AstrBot 没有 ``register_web_api``，这里做能力探测后静默跳过，
+        不影响插件在低版本上的可用性。
+        """
+        if self._web_api_registered:
+            return
+        register = getattr(self.context, "register_web_api", None)
+        if not callable(register):
+            self.logger.debug("当前 AstrBot 版本不支持 register_web_api，跳过插件页面接口注册")
+            return
+        try:
+            register(
+                WEB_API_STATUS_ROUTE,
+                self._web_status_handler,
+                ["GET"],
+                "B站插件运行状态（只读）",
+            )
+        except Exception as exc:  # noqa: BLE001 - 注册失败不应影响插件加载
+            self.logger.warning("注册插件页面接口失败（不影响核心功能）：%s", exc)
+            return
+        self._web_api_registered = True
+        self.logger.debug("已注册插件页面接口：%s", WEB_API_STATUS_ROUTE)
+
+    async def _web_status_handler(self, **_: Any) -> Any:
+        """插件页面调用入口：返回脱敏后的运行状态 JSON。"""
+        try:
+            from astrbot.api.web import json_response
+        except ImportError:  # pragma: no cover - 缺失时退回普通 dict
+            return self.health_snapshot()
+        return json_response({"status": "ok", "data": self.health_snapshot()})
+
+    def health_snapshot(self) -> dict[str, Any]:
+        """运行状态快照（只读、已脱敏，供插件页面 / 自检 / 监控使用）。"""
+        loop_ok = bool(self._running and self._poll_task and not self._poll_task.done())
+        return {
+            "plugin": PLUGIN_NAME,
+            "display_name": PLUGIN_DISPLAY_NAME,
+            "version": PLUGIN_VERSION,
+            "uptime_seconds": int(max(0.0, time.time() - self._started_at)),
+            "healthy": loop_ok,
+            "poll_running": loop_ok,
+            "sessions": len(self.subscriptions),
+            "subscriptions": self._sub_count(),
+            "schema_version": self.data_schema_version,
+            "cookie_configured": bool(self.bili_cookie),
+            "cookie_masked": mask_secret(self.bili_cookie),
+            "features": {
+                "parse": self.enable_bili_parse,
+                "video_info": self.send_video_info,
+                "download": self.enable_video_download,
+                "llm_tool": self.enable_llm_tool,
+            },
+            "poll": {
+                "interval_seconds": self.poll_interval_seconds,
+                "concurrency": self.uid_concurrency,
+                "dynamic_limit": self.dynamic_limit,
+                "min_request_interval_seconds": self.min_request_interval_seconds,
+            },
+            "stats": dict(self.stats),
+        }
+
+    def _start_poll_task(self) -> None:
         if self._poll_task and not self._poll_task.done():
             self._poll_task.cancel()
+        self._poll_task = asyncio.create_task(
+            self._poll_loop(),
+            name="bili-dynamic-poll",
+        )
+
+    async def terminate(self) -> None:
+        """插件卸载/重载时调用：停止轮询、关闭会话并落盘订阅数据。"""
+        self._running = False
+        task = self._poll_task
+        self._poll_task = None
+        if task and not task.done():
+            task.cancel()
             try:
-                await self._poll_task
+                await task
             except asyncio.CancelledError:
                 pass
-        if self._http_session and not self._http_session.closed:
-            await self._http_session.close()
-            self._http_session = None
+            except Exception as exc:  # noqa: BLE001 - 卸载阶段只记录，不向上抛
+                self.logger.warning("轮询任务退出异常: %s", exc)
+        session = self._http_session
+        self._http_session = None
+        if session and not session.closed:
+            try:
+                await session.close()
+            except Exception as exc:  # noqa: BLE001 - 关闭失败不影响卸载
+                self.logger.warning("关闭 HTTP 会话失败: %s", exc)
         self._save_subscriptions()
+        self.logger.info(
+            "BiliAll 插件已卸载：运行 %.0fs，请求 %d 次（失败 %d），推送动态 %d 条 / 直播 %d 次",
+            max(0.0, time.time() - self._started_at),
+            self.stats["http_requests"],
+            self.stats["http_failures"],
+            self.stats["dynamic_pushes"],
+            self.stats["live_pushes"],
+        )
 
     # ───────────────────── 配置 ─────────────────────
 
@@ -117,9 +447,26 @@ class BiliAllPlugin(Star):
         """安全整数转换，低于 *min_val* 时回退到 *default*。"""
         try:
             v = int(value)
-            return v if v >= min_val else default
         except (TypeError, ValueError, OverflowError):
             return default
+        return v if v >= min_val else default
+
+    @staticmethod
+    def _float(value: Any, default: float, *, min_val: float = 0.0) -> float:
+        try:
+            v = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return default
+        return v if v >= min_val else default
+
+    @staticmethod
+    def _str_list(value: Any) -> list[str]:
+        """把 ``str`` / ``list`` 形式的配置项规范化为字符串列表。"""
+        if isinstance(value, list):
+            return [str(x).strip() for x in value if str(x).strip()]
+        if isinstance(value, str) and value.strip():
+            return [p for p in re.split(r"[,\s]+", value.strip()) if p]
+        return []
 
     def _cfg(self, key: str, default: Any = None) -> Any:
         """按点分路径读取嵌套配置。"""
@@ -133,50 +480,108 @@ class BiliAllPlugin(Star):
         return node
 
     def _refresh_config(self) -> None:
-        c, ci = self._cfg, self._int
+        c, ci, cf = self._cfg, self._int, self._float
         self.enable_bili_parse = bool(c("features.enable_bili_parse", True))
-        self.poll_interval_seconds = ci(c("subscription.poll_interval_seconds", 300), 300)
-        self.timeout_seconds = ci(c("subscription.timeout_seconds", 15), 15)
-        self.dynamic_limit = ci(c("subscription.dynamic_limit", 3), 3)
-        self.uid_task_gap_seconds = ci(c("subscription.uid_task_gap_seconds", 1), 1, min_val=0)
-        self.recent_ids_limit = ci(c("subscription.recent_ids_limit", 20), 20)
+        self.send_video_info = bool(c("features.send_video_info", True))
+        self.enable_llm_tool = bool(c("features.enable_llm_tool", True))
+
+        self.poll_interval_seconds = ci(
+            c("subscription.poll_interval_seconds", DEFAULT_POLL_INTERVAL_SECONDS),
+            DEFAULT_POLL_INTERVAL_SECONDS,
+        )
+        self.timeout_seconds = ci(
+            c("subscription.timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
+            DEFAULT_TIMEOUT_SECONDS,
+        )
+        self.dynamic_limit = ci(
+            c("subscription.dynamic_limit", DEFAULT_DYNAMIC_LIMIT),
+            DEFAULT_DYNAMIC_LIMIT,
+        )
+        self.uid_task_gap_seconds = ci(
+            c("subscription.uid_task_gap_seconds", DEFAULT_UID_TASK_GAP_SECONDS),
+            DEFAULT_UID_TASK_GAP_SECONDS,
+            min_val=0,
+        )
+        self.uid_concurrency = ci(
+            c("subscription.uid_concurrency", DEFAULT_UID_CONCURRENCY),
+            DEFAULT_UID_CONCURRENCY,
+        )
+        self.recent_ids_limit = ci(
+            c("subscription.recent_ids_limit", DEFAULT_RECENT_IDS_LIMIT),
+            DEFAULT_RECENT_IDS_LIMIT,
+        )
+        self.empty_retry_count = ci(
+            c("subscription.empty_retry_count", DEFAULT_EMPTY_RETRY_COUNT),
+            DEFAULT_EMPTY_RETRY_COUNT,
+            min_val=0,
+        )
+        self.empty_retry_delay_seconds = cf(
+            c("subscription.empty_retry_delay_seconds", DEFAULT_EMPTY_RETRY_DELAY_SECONDS),
+            DEFAULT_EMPTY_RETRY_DELAY_SECONDS,
+        )
+        self.http_retry_count = ci(
+            c("subscription.http_retry_count", DEFAULT_HTTP_RETRY_COUNT),
+            DEFAULT_HTTP_RETRY_COUNT,
+            min_val=0,
+        )
+        self.http_retry_delay_seconds = cf(
+            c("subscription.http_retry_delay_seconds", DEFAULT_HTTP_RETRY_DELAY_SECONDS),
+            DEFAULT_HTTP_RETRY_DELAY_SECONDS,
+        )
+        self.min_request_interval_seconds = cf(
+            c("subscription.min_request_interval_seconds", DEFAULT_MIN_REQUEST_INTERVAL_SECONDS),
+            DEFAULT_MIN_REQUEST_INTERVAL_SECONDS,
+        )
 
         self.enable_video_download = bool(c("video_download.enable", False))
-        label = str(c("video_download.quality", "720P")).upper()
-        self.video_quality_label = label if label in QUALITY_TO_QN else "720P"
-        self.video_max_duration_seconds = ci(c("video_download.max_duration_seconds", 600), 600, min_val=0)
-        self.video_max_size_mb = ci(c("video_download.max_size_mb", 100), 100, min_val=0)
+        label = str(c("video_download.quality", DEFAULT_QUALITY_LABEL)).upper()
+        self.video_quality_label = label if label in QUALITY_TO_QN else DEFAULT_QUALITY_LABEL
+        self.video_max_duration_seconds = ci(
+            c("video_download.max_duration_seconds", DEFAULT_VIDEO_MAX_DURATION_SECONDS),
+            DEFAULT_VIDEO_MAX_DURATION_SECONDS,
+            min_val=0,
+        )
+        self.video_max_size_mb = ci(
+            c("video_download.max_size_mb", DEFAULT_VIDEO_MAX_SIZE_MB),
+            DEFAULT_VIDEO_MAX_SIZE_MB,
+            min_val=0,
+        )
         self.video_auto_delete = bool(c("video_download.auto_delete", True))
-        self.video_retry_count = max(0, ci(c("video_download.retry_count", 2), 2, min_val=0))
-        self.bili_cookie = str(c("video_download.bili_cookie", "") or "").strip()
-        self.http_retry_count = max(0, ci(c("subscription.http_retry_count", 2), 2, min_val=0))
-        try:
-            d = float(c("subscription.http_retry_delay_seconds", 0.35))
-            self.http_retry_delay_seconds = d if d >= 0 else 0.35
-        except (TypeError, ValueError):
-            self.http_retry_delay_seconds = 0.35
-
-        raw = c("permission.admin_ids", "")
-        if isinstance(raw, list):
-            self.admin_ids = {str(x).strip() for x in raw if str(x).strip()}
-        elif isinstance(raw, str) and raw.strip():
-            self.admin_ids = {p for p in re.split(r"[,\s]+", raw.strip()) if p}
-        else:
-            self.admin_ids = set()
+        self.video_retry_count = ci(
+            c("video_download.retry_count", DEFAULT_VIDEO_RETRY_COUNT),
+            DEFAULT_VIDEO_RETRY_COUNT,
+            min_val=0,
+        )
+        self.bili_cookie = sanitize_cookie(c("video_download.bili_cookie", ""))
+        self.admin_ids = set(self._str_list(c("permission.admin_ids", "")))
 
     # ───────────────────── HTTP 层 ─────────────────────
 
-    def _headers(self, *, referer: bool = False, cookie: bool = False) -> dict[str, str]:
+    def _headers(
+        self,
+        *,
+        referer: bool = False,
+        cookie: bool = False,
+        referer_uid: int | None = None,
+        url: str | None = None,
+    ) -> dict[str, str]:
+        """构造请求头。
+
+        ``cookie=True`` 时只有目标域名属于B站（:data:`BILI_COOKIE_HOST_SUFFIXES`）
+        才会带上登录 Cookie，避免重定向到第三方域名时泄漏登录态。
+        """
         h: dict[str, str] = {
-            "User-Agent": "Mozilla/5.0",
+            "User-Agent": USER_AGENT,
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "Connection": "keep-alive",
             "Origin": "https://www.bilibili.com",
         }
-        if referer:
+        if referer_uid:
+            h["Referer"] = DYNAMIC_SPACE_URL.format(uid=referer_uid)
+        elif referer:
             h["Referer"] = "https://www.bilibili.com/"
-        if cookie and self.bili_cookie:
+        if cookie and self.bili_cookie and (url is None or is_trusted_host(url)):
             h["Cookie"] = self.bili_cookie
         return h
 
@@ -186,7 +591,7 @@ class BiliAllPlugin(Star):
         if isinstance(exc, aiohttp.ClientResponseError):
             code = int(getattr(exc, "status", 0) or 0)
             tag = "http_client" if 400 <= code < 500 else ("http_server" if code >= 500 else "http")
-            return f"{tag}_{code}", code in _RETRYABLE_HTTP
+            return f"{tag}_{code}", code in RETRYABLE_HTTP
         if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
             return "timeout", True
         if isinstance(exc, (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError)):
@@ -199,26 +604,76 @@ class BiliAllPlugin(Star):
         self._http_session = aiohttp.ClientSession(trust_env=True)
         return self._http_session
 
+    async def _throttle(self) -> None:
+        """限制外部请求频率，降低触发 B站风控的概率。
+
+        间隔为 0 时直接返回（测试与高频自检场景）。
+        """
+        interval = max(0.0, self.min_request_interval_seconds)
+        if interval <= 0:
+            return
+        async with self._throttle_lock:
+            wait = self._last_request_at + interval - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_request_at = time.monotonic()
+
+    def _retry_delay(self, attempt: int) -> float:
+        """重试等待时间：基础间隔 × 轮次，并加入轻微抖动避免同步冲击。"""
+        base = max(0.0, self.http_retry_delay_seconds) * max(1, attempt)
+        if base <= 0:
+            return 0.0
+        return base + random.uniform(0, base * 0.25)
+
+    @staticmethod
+    async def _read_limited(resp: aiohttp.ClientResponse, limit: int) -> bytes:
+        """读取响应体，超过 *limit* 字节时抛 :class:`ValueError`。"""
+        if limit <= 0:
+            return await resp.read()
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in resp.content.iter_chunked(64 * 1024):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > limit:
+                raise ValueError(f"响应体超过 {limit} 字节上限")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
     async def _request(
-        self, *, url: str, method: str = "GET",
-        headers: dict[str, str], read_body: bool = True,
-        scene: str, silent_codes: set[int] | None = None,
-        retry: bool = True, retry_count: int | None = None,
+        self,
+        *,
+        url: str,
+        method: str = "GET",
+        headers: dict[str, str],
+        read_body: bool = True,
+        scene: str,
+        silent_codes: set[int] | frozenset[int] | None = None,
+        retry: bool = True,
+        retry_count: int | None = None,
+        max_bytes: int = MAX_JSON_BYTES,
     ) -> dict[str, Any] | None:
         session = await self._ensure_http_session()
+        safe_headers = self._strip_untrusted_cookie(url, headers)
 
         effective = retry_count if retry_count is not None else self.http_retry_count
         max_att = (effective + 1) if retry else 1
         for att in range(1, max_att + 1):
+            await self._throttle()
+            self.stats["http_requests"] += 1
             try:
                 async with session.request(
-                    method, url, headers=headers,
+                    method,
+                    url,
+                    headers=safe_headers,
                     allow_redirects=True,
                     timeout=aiohttp.ClientTimeout(total=self.timeout_seconds),
                 ) as resp:
                     status = int(resp.status or 0)
                     if silent_codes and status in silent_codes:
-                        logger.info("请求静默降级[%s][http_%s]", scene, status)
+                        self.stats["http_silent"] += 1
+                        self.logger.debug("请求静默降级[%s][http_%s]", scene, status)
                         return None
                     if status >= 400:
                         raise aiohttp.ClientResponseError(
@@ -228,58 +683,100 @@ class BiliAllPlugin(Star):
                             message=resp.reason or "",
                             headers=resp.headers,
                         )
+                    body = await self._read_limited(resp, max_bytes) if read_body else b""
                     return {
-                        "body": await resp.read() if read_body else b"",
+                        "body": body,
                         "headers": resp.headers,
                         "status": status,
                         "final_url": str(resp.url),
                     }
+            except ValueError as exc:  # 响应体超限：不重试，直接放弃
+                self.stats["http_failures"] += 1
+                self.logger.warning("响应体异常[%s]: %s", scene, exc)
+                break
             except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError) as exc:
                 if isinstance(exc, aiohttp.ClientResponseError):
                     code = int(getattr(exc, "status", 0) or 0)
                     if silent_codes and code in silent_codes:
-                        logger.info("请求静默降级[%s][http_%s]", scene, code)
+                        self.stats["http_silent"] += 1
+                        self.logger.debug("请求静默降级[%s][http_%s]", scene, code)
                         return None
                 cat, retryable = self._classify_exc(exc)
-                logger.warning("请求失败[%s][%s] %d/%d: %s", scene, cat, att, max_att, exc)
+                self.stats["http_failures"] += 1
+                self.logger.warning("请求失败[%s][%s] %d/%d: %s", scene, cat, att, max_att, exc)
                 if not retryable or att >= max_att:
                     break
-                await asyncio.sleep(self.http_retry_delay_seconds * att)
+                await asyncio.sleep(self._retry_delay(att))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - 兜底：未知异常不重试、仅记录
+                self.stats["http_failures"] += 1
+                self.logger.warning("请求异常[%s] %d/%d: %s", scene, att, max_att, exc)
+                break
         return None
 
+    def _strip_untrusted_cookie(
+        self,
+        url: str,
+        headers: dict[str, str],
+    ) -> dict[str, str]:
+        """目标域名不受信任时剥离 Cookie，避免登录态随重定向泄漏。"""
+        if "Cookie" not in headers or is_trusted_host(url):
+            return headers
+        cleaned = {k: v for k, v in headers.items() if k.lower() != "cookie"}
+        self.logger.debug("目标域名 %s 不受信任，已剥离请求 Cookie", host_of(url))
+        return cleaned
+
     async def _get_json(
-        self, base_url: str, params: dict[str, Any], *,
+        self,
+        base_url: str,
+        params: dict[str, Any],
+        *,
         headers: dict[str, str] | None = None,
         scene: str = "get_json",
-        silent_codes: set[int] | None = None,
-        retry: bool = True, retry_count: int | None = None,
+        silent_codes: set[int] | frozenset[int] | None = None,
+        retry: bool = True,
+        retry_count: int | None = None,
     ) -> dict[str, Any] | None:
         qs = urlencode(params, doseq=True)
         full = f"{base_url}?{qs}" if qs else base_url
         result = await self._request(
-            url=full, headers=headers or self._headers(referer=True, cookie=True),
-            scene=scene, silent_codes=silent_codes, retry=retry,
+            url=full,
+            headers=headers or self._headers(referer=True, cookie=True, url=full),
+            scene=scene,
+            silent_codes=silent_codes,
+            retry=retry,
             retry_count=retry_count,
         )
         if not result:
             return None
         try:
-            return json.loads(bytes(result["body"]).decode("utf-8", errors="ignore"))
+            payload = json.loads(bytes(result["body"]).decode("utf-8", errors="ignore"))
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
-            logger.warning("JSON 解析失败[%s]: %s", scene, exc)
+            self.logger.warning("JSON 解析失败[%s]: %s", scene, exc)
             return None
+        return payload if isinstance(payload, dict) else None
 
     async def _get_json_candidates(
-        self, base_url: str, params: dict[str, Any],
-        header_list: list[dict[str, str]], *,
-        scene: str, silent_codes: set[int] | None = None,
-        retry: bool = True, retry_count: int | None = None,
+        self,
+        base_url: str,
+        params: dict[str, Any],
+        header_list: Sequence[dict[str, str]],
+        *,
+        scene: str,
+        silent_codes: set[int] | frozenset[int] | None = None,
+        retry: bool = True,
+        retry_count: int | None = None,
     ) -> dict[str, Any] | None:
         """尝试多组 headers 直到其中一组返回有效 payload。"""
         for i, h in enumerate(header_list, 1):
             payload = await self._get_json(
-                base_url, params, headers=h,
-                scene=f"{scene}_{i}", silent_codes=silent_codes, retry=retry,
+                base_url,
+                params,
+                headers=h,
+                scene=f"{scene}_{i}",
+                silent_codes=silent_codes,
+                retry=retry,
                 retry_count=retry_count,
             )
             if payload is not None:
@@ -292,50 +789,101 @@ class BiliAllPlugin(Star):
         return sum(len(v) for v in self.subscriptions.values())
 
     def _load_subscriptions(self) -> None:
+        """加载订阅数据。
+
+        生产约束：文件损坏/类型异常时回退为空并记录错误（不影响插件启动）；
+        会话数与单会话订阅数都会按上限截断，避免手工编辑的文件拖垮轮询。
+        """
         if not self.data_path.exists():
             self.data_path.parent.mkdir(parents=True, exist_ok=True)
             self.subscriptions = {}
             return
         try:
             raw = json.loads(self.data_path.read_text(encoding="utf-8")) or {}
-        except (OSError, json.JSONDecodeError, TypeError) as exc:
-            logger.error("加载订阅数据失败: %s", exc)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            self.logger.error("加载订阅数据失败（将使用空配置）: %s", exc)
+            self.subscriptions = {}
+            return
+        if not isinstance(raw, dict):
+            self.logger.error("订阅数据格式异常（期望 JSON 对象），已忽略")
             self.subscriptions = {}
             return
 
+        self.data_schema_version = self._int(
+            raw.pop(SUBSCRIPTIONS_SCHEMA_KEY, 1),
+            1,
+            min_val=1,
+        )
         loaded: dict[str, list[Subscription]] = {}
+        dropped = 0
         for session, items in raw.items():
+            if len(loaded) >= MAX_SESSIONS:
+                dropped += 1
+                continue
             if not isinstance(items, list):
                 continue
             subs: list[Subscription] = []
             for it in items:
+                if len(subs) >= MAX_SUBS_PER_SESSION:
+                    dropped += 1
+                    break
+                if not isinstance(it, dict):
+                    continue
                 try:
                     ft_raw = it.get("filter_types") or []
                     fr_raw = it.get("filter_regex") or []
                     ri_raw = it.get("recent_ids") or []
-                    subs.append(Subscription(
-                        uid=int(it["uid"]),
-                        last_dynamic_id=str(it.get("last_dynamic_id") or ""),
-                        is_live=bool(it.get("is_live")),
-                        filter_types=[s for x in (ft_raw if isinstance(ft_raw, list) else [])
-                                      if (s := str(x).strip()) and s in VALID_FILTER_TYPES],
-                        filter_regex=[s for x in (fr_raw if isinstance(fr_raw, list) else [])
-                                      if (s := str(x).strip())],
-                        recent_ids=[str(x) for x in (ri_raw if isinstance(ri_raw, list) else []) if x],
-                    ))
+                    subs.append(
+                        Subscription(
+                            uid=int(it["uid"]),
+                            last_dynamic_id=str(it.get("last_dynamic_id") or ""),
+                            is_live=bool(it.get("is_live")),
+                            filter_types=[
+                                s
+                                for x in (ft_raw if isinstance(ft_raw, list) else [])
+                                if (s := str(x).strip()) and s in VALID_FILTER_TYPES
+                            ],
+                            filter_regex=[
+                                s for x in (fr_raw if isinstance(fr_raw, list) else []) if (s := str(x).strip())
+                            ],
+                            recent_ids=[str(x) for x in (ri_raw if isinstance(ri_raw, list) else []) if x],
+                        )
+                    )
                 except (KeyError, TypeError, ValueError):
+                    dropped += 1
                     continue
             if subs:
                 loaded[str(session)] = subs
         self.subscriptions = loaded
+        if dropped:
+            self.logger.warning(
+                "订阅数据存在 %d 处非法/超限条目已忽略（会话上限 %d，单会话订阅上限 %d）",
+                dropped,
+                MAX_SESSIONS,
+                MAX_SUBS_PER_SESSION,
+            )
 
     def _save_subscriptions(self) -> None:
+        """原子写入订阅数据，避免进程中断导致文件损坏。
+
+        写入流程：临时文件 → ``os.replace`` 原子替换 → 目录 ``fsync``（尽力而为）。
+        返回前会把内存态标记为「已落盘」，避免重复写入。
+        """
         try:
             self.data_path.parent.mkdir(parents=True, exist_ok=True)
-            data = {s: [asdict(sub) for sub in lst] for s, lst in self.subscriptions.items() if lst}
-            self.data_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            data: dict[str, Any] = {SUBSCRIPTIONS_SCHEMA_KEY: SUBSCRIPTIONS_SCHEMA_VERSION}
+            data.update({s: [asdict(sub) for sub in lst] for s, lst in self.subscriptions.items() if lst})
+            tmp_path = self.data_path.parent / f"{self.data_path.name}.tmp"
+            payload = json.dumps(data, ensure_ascii=False, indent=2)
+            with tmp_path.open("w", encoding="utf-8") as fp:
+                fp.write(payload)
+                fp.flush()
+                os.fsync(fp.fileno())
+            os.replace(tmp_path, self.data_path)
+            _fsync_dir(self.data_path.parent)
+            self.data_schema_version = SUBSCRIPTIONS_SCHEMA_VERSION
         except (OSError, TypeError, ValueError) as exc:
-            logger.error("保存订阅数据失败: %s", exc)
+            self.logger.error("保存订阅数据失败: %s", exc)
 
     def _session_key(self, event: AstrMessageEvent) -> str:
         umo = getattr(event, "unified_msg_origin", None)
@@ -365,7 +913,7 @@ class BiliAllPlugin(Star):
                 if got:
                     return got
         if hasattr(data, "data"):
-            return self._coerce_json(getattr(data, "data"), _depth + 1)
+            return self._coerce_json(data.data, _depth + 1)
         return None
 
     def _extract_links_from_json(self, json_data: Any) -> list[str]:
@@ -409,7 +957,7 @@ class BiliAllPlugin(Star):
         if not msg_obj or not hasattr(msg_obj, "message"):
             return []
         links: list[str] = []
-        for comp in msg_obj.message:
+        for comp in msg_obj.message or []:
             if isinstance(comp, dict):
                 comp_type = str(comp.get("type") or "").lower()
                 if comp_type == "reply":
@@ -426,8 +974,10 @@ class BiliAllPlugin(Star):
 
     async def _resolve_short_url(self, short_url: str) -> str:
         result = await self._request(
-            url=short_url, headers=self._headers(referer=True, cookie=True),
-            read_body=False, scene="resolve_short_url",
+            url=short_url,
+            headers=self._headers(referer=True, cookie=True),
+            read_body=False,
+            scene="resolve_short_url",
         )
         return str(result.get("final_url") or short_url) if result else short_url
 
@@ -444,7 +994,7 @@ class BiliAllPlugin(Star):
             return {"bvid": None, "aid": int(m.group(0)[2:]), "source": token, "page": parse_page_index(current)}
         return None
 
-    async def _extract_video_ref_from_tokens(self, tokens: list[str]) -> dict[str, Any] | None:
+    async def _extract_video_ref_from_tokens(self, tokens: Sequence[str]) -> dict[str, Any] | None:
         for token in tokens:
             ref = await self._extract_video_ref(token)
             if ref:
@@ -454,7 +1004,10 @@ class BiliAllPlugin(Star):
     # ───────────────────── 视频信息 & 下载 ─────────────────────
 
     async def _get_video_info(
-        self, ref: dict[str, Any], *, retry_count: int | None = None,
+        self,
+        ref: dict[str, Any],
+        *,
+        retry_count: int | None = None,
     ) -> dict[str, Any] | None:
         params: dict[str, Any] = {}
         if ref.get("bvid"):
@@ -464,23 +1017,26 @@ class BiliAllPlugin(Star):
         else:
             return None
         payload = await self._get_json(
-            "https://api.bilibili.com/x/web-interface/view", params, scene="video_info",
+            API_VIDEO_VIEW,
+            params,
+            scene="video_info",
             retry_count=retry_count,
         )
         return payload.get("data") if payload and payload.get("code") == 0 else None
 
     @staticmethod
     def _quality_candidates(label: str) -> list[int]:
-        selected = QUALITY_TO_QN.get(label.upper(), 64)
+        selected = QUALITY_TO_QN.get(label.upper(), DEFAULT_QN)
         levels = sorted(set(QUALITY_TO_QN.values()), reverse=True)
-        idx = levels.index(selected) if selected in levels else levels.index(64)
+        idx = levels.index(selected) if selected in levels else levels.index(DEFAULT_QN)
         return levels[idx:]
 
     async def _fetch_playurl(self, *, bvid: str, cid: int, qn: int) -> dict[str, Any] | None:
         payload = await self._get_json(
-            "https://api.bilibili.com/x/player/playurl",
+            API_PLAYURL,
             {"bvid": bvid, "cid": cid, "qn": qn, "fnval": 0, "fnver": 0, "fourk": 1},
-            scene="playurl", retry_count=self.video_retry_count,
+            scene="playurl",
+            retry_count=self.video_retry_count,
         )
         if not payload or payload.get("code") != 0:
             return None
@@ -490,20 +1046,23 @@ class BiliAllPlugin(Star):
         if isinstance(durl, list) and durl and isinstance(durl[0], dict):
             url = str(durl[0].get("url") or "").strip()
             if url:
-                return {"url": url, "quality": int(data.get("quality") or qn)}
+                return {"url": url, "quality": self._int(data.get("quality"), qn, min_val=0)}
         # dash 模式
         dash = data.get("dash")
         videos = dash.get("video") if isinstance(dash, dict) else None
         if isinstance(videos, list) and videos and isinstance(videos[0], dict):
             url = str(videos[0].get("baseUrl") or videos[0].get("base_url") or "").strip()
             if url:
-                return {"url": url, "quality": int(videos[0].get("id") or qn)}
+                return {"url": url, "quality": self._int(videos[0].get("id"), qn, min_val=0)}
         return None
 
     async def _probe_content_length(self, url: str) -> int | None:
         result = await self._request(
-            url=url, method="HEAD", headers=self._headers(referer=True, cookie=True),
-            read_body=False, scene="probe_size",
+            url=url,
+            method="HEAD",
+            headers=self._headers(referer=True, cookie=True, url=url),
+            read_body=False,
+            scene="probe_size",
             retry_count=self.video_retry_count,
         )
         if not result:
@@ -524,7 +1083,7 @@ class BiliAllPlugin(Star):
                 total = 0
                 async with session.get(
                     url,
-                    headers=self._headers(referer=True, cookie=True),
+                    headers=self._headers(referer=True, cookie=True, url=url),
                     timeout=aiohttp.ClientTimeout(sock_read=self.timeout_seconds),
                 ) as resp:
                     status = int(resp.status or 0)
@@ -537,7 +1096,7 @@ class BiliAllPlugin(Star):
                             headers=resp.headers,
                         )
                     with save_path.open("wb") as f:
-                        async for chunk in resp.content.iter_chunked(256 * 1024):
+                        async for chunk in resp.content.iter_chunked(DOWNLOAD_CHUNK_SIZE):
                             if not chunk:
                                 continue
                             total += len(chunk)
@@ -549,18 +1108,18 @@ class BiliAllPlugin(Star):
                 raise
             except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError) as exc:
                 cat, retryable = self._classify_exc(exc)
-                logger.warning("下载失败[%s] %d/%d: %s", cat, att, max_att, exc)
-                try:
+                self.logger.warning("下载失败[%s] %d/%d: %s", cat, att, max_att, exc)
+                with suppress(OSError):  # pragma: no cover - 删除失败不影响主流程
                     save_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
                 if not retryable or att >= max_att:
                     raise
                 await asyncio.sleep(self.http_retry_delay_seconds * att)
-        raise RuntimeError("下载失败")
+        raise RuntimeError("下载失败")  # pragma: no cover - 循环内必然 return 或 raise
 
     async def _download_video(
-        self, ref: dict[str, Any], info: dict[str, Any] | None = None,
+        self,
+        ref: dict[str, Any],
+        info: dict[str, Any] | None = None,
     ) -> tuple[Path | None, str]:
         """下载视频文件，返回 (保存路径, 错误信息)。"""
         if info is None:
@@ -573,11 +1132,11 @@ class BiliAllPlugin(Star):
             return None, "无法识别 bvid"
 
         page, page_idx, _ = resolve_video_page(info, ref)
-        cid = int(page.get("cid") or 0)
+        cid = self._int(page.get("cid"), 0, min_val=0)
         if cid <= 0:
             return None, "无法识别 cid"
 
-        duration = int(page.get("duration") or info.get("duration") or 0)
+        duration = self._int(page.get("duration") or info.get("duration"), 0, min_val=0)
         if self.video_max_duration_seconds > 0 and duration > self.video_max_duration_seconds:
             return None, f"视频时长超过限制({duration}s > {self.video_max_duration_seconds}s)"
 
@@ -599,11 +1158,15 @@ class BiliAllPlugin(Star):
                 return None, f"视频大小超过限制({cl / 1024 / 1024:.1f}MB > {self.video_max_size_mb}MB)"
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = self.video_cache_dir / f"{bvid}_p{page_idx + 1}_{ts}.mp4"
+        safe_bvid = sanitize_filename(bvid, fallback="video")
+        save_path = self.video_cache_dir / f"{safe_bvid}_p{page_idx + 1}_{ts}.mp4"
         try:
             size = await self._download_file(stream_url, save_path, max_bytes)
             if size <= 0 or not save_path.exists():
                 return None, "下载结果为空"
+            self.stats["downloads"] += 1
+            self.stats["download_bytes"] += size
+            self.logger.info("视频下载完成：%s（%s）", save_path.name, format_bytes(size))
             return save_path, ""
         except ValueError as exc:
             save_path.unlink(missing_ok=True)
@@ -612,8 +1175,20 @@ class BiliAllPlugin(Star):
             save_path.unlink(missing_ok=True)
             return None, f"下载失败: {exc}"
 
+    async def _safe_send(self, session: str, chain: list[object], scene: str) -> bool:
+        """主动发送消息链（失败不影响主流程）。"""
+        try:
+            await self.context.send_message(session, MessageChain(chain=chain))
+            return True
+        except Exception as exc:  # noqa: BLE001 - 平台侧异常种类繁多
+            self.stats["send_failures"] += 1
+            self.logger.warning("发送消息失败[%s]: %s", scene, exc)
+            return False
+
     async def _send_video_download(
-        self, event: AstrMessageEvent, ref: dict[str, Any],
+        self,
+        event: AstrMessageEvent,
+        ref: dict[str, Any],
         info: dict[str, Any] | None = None,
     ) -> None:
         """可选的视频下载并发送（仅 enable_video_download=True 时生效）。"""
@@ -624,53 +1199,93 @@ class BiliAllPlugin(Star):
             video_path, err = await self._download_video(ref, info)
             if not video_path:
                 if err:
-                    await self.context.send_message(
+                    await self._safe_send(
                         event.unified_msg_origin,
-                        MessageEventResult(chain=[Comp.Plain(f"[Warning] {err}")]),
+                        [Comp.Plain(f"⚠️ {err}")],
+                        "video_download",
                     )
                 return
-            await self.context.send_message(
+            await self._safe_send(
                 event.unified_msg_origin,
-                MessageEventResult(chain=[
-                    Comp.Video.fromFileSystem(str(video_path.resolve())),
-                ]),
+                [Comp.Video.fromFileSystem(str(video_path.resolve()))],
+                "video_download",
             )
         except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError, RuntimeError) as exc:
-            logger.warning("发送下载视频失败: %s", exc)
-            await self.context.send_message(
+            self.logger.warning("发送下载视频失败: %s", exc)
+            await self._safe_send(
                 event.unified_msg_origin,
-                MessageEventResult(chain=[Comp.Plain(f"[Warning] 视频发送失败: {exc}")]),
+                [Comp.Plain(f"⚠️ 视频发送失败: {exc}")],
+                "video_download",
             )
         finally:
             if self.video_auto_delete and video_path and video_path.exists():
-                try:
+                with suppress(OSError, RuntimeError):  # pragma: no cover - 删除失败不影响主流程
                     await asyncio.to_thread(video_path.unlink, True)
-                except (OSError, RuntimeError):
-                    pass
 
     # ───────────────────── 动态 & 直播 ─────────────────────
 
-    async def _fetch_dynamic_items(self, uid: int) -> list[dict[str, Any]]:
-        payload = await self._get_json_candidates(
-            "https://api.bilibili.com/x/polymer/web-dynamic/desktop/v1/feed/space",
-            {"host_mid": uid, "timezone_offset": -480},
-            [self._headers(referer=True), self._headers(referer=True, cookie=True)],
-            scene="fetch_dynamic", silent_codes={412}, retry=False,
-        )
+    @staticmethod
+    def _dynamic_items(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+        """从动态接口响应中提取并规范化动态列表。"""
         if not payload or payload.get("code") != 0:
             return []
-        items = [
-            it for it in (payload.get("data", {}).get("items") or [])
-            if isinstance(it, dict) and it.get("id_str")
-        ]
+        data = payload.get("data") or {}
+        raw_items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(raw_items, list):
+            return []
+        items = [it for it in raw_items if isinstance(it, dict) and it.get("id_str")]
         for it in items:
             normalize_modules(it)
         return items
 
+    async def _fetch_dynamic_items(self, uid: int) -> list[dict[str, Any]]:
+        """拉取 UP 主最新动态。
+
+        B站动态接口会**偶发返回 code=0 但 items 为空**（缓存/风控边缘，实测同一 UID
+        连续请求的成功率约 60%~70%），因此这里对空结果做有限重试，否则会把
+        「未读到」误判为「没有新动态」，表现为**订阅永远收不到最新动态**。
+
+        重试时每次都带一个时间戳参数（``_``），避免连续命中同一份空缓存。
+        """
+        attempts = max(1, self.empty_retry_count + 1)
+        headers = [
+            self._headers(referer=True, referer_uid=uid),
+            self._headers(referer=True, referer_uid=uid, cookie=True),
+        ]
+        for attempt in range(1, attempts + 1):
+            payload = await self._get_json_candidates(
+                API_DYNAMIC_FEED,
+                {
+                    "host_mid": uid,
+                    "timezone_offset": -480,
+                    "offset": "",
+                    "features": DYNAMIC_FEED_FEATURES,
+                    "_": int(time.time() * 1000),
+                },
+                headers,
+                scene="fetch_dynamic",
+                silent_codes=DYNAMIC_SILENT_CODES,
+                retry=False,
+            )
+            items = self._dynamic_items(payload)
+            if items:
+                return items
+            if attempt < attempts:
+                await asyncio.sleep(self.empty_retry_delay_seconds * attempt)
+        self.logger.warning(
+            "UID %s 的动态接口连续 %d 次返回空结果（B站偶发空响应/风控，或该 UP 主确实没有动态）；"
+            "本轮不更新订阅锚点，下轮会重试",
+            uid,
+            attempts,
+        )
+        return []
+
     async def _fetch_live_status(self, uid: int) -> dict[str, Any] | None:
         payload = await self._get_json(
-            "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids",
-            {"uids[]": uid}, scene="live_status", retry=False,
+            API_LIVE_STATUS,
+            {"uids[]": uid},
+            scene="live_status",
+            retry=False,
         )
         if payload and payload.get("code") == 0:
             data = payload.get("data") or {}
@@ -683,8 +1298,10 @@ class BiliAllPlugin(Star):
 
     async def _fetch_live_room(self, uid: int) -> dict[str, Any] | None:
         payload = await self._get_json(
-            "https://api.live.bilibili.com/room/v1/Room/getRoomInfoOld",
-            {"mid": uid}, scene="live_room", retry=False,
+            API_LIVE_ROOM,
+            {"mid": uid},
+            scene="live_room",
+            retry=False,
         )
         if not payload or payload.get("code") != 0:
             return None
@@ -698,25 +1315,23 @@ class BiliAllPlugin(Star):
             "title": d.get("title") or "",
             "cover": d.get("cover") or d.get("user_cover") or "",
             "keyframe": d.get("keyframe") or "",
-            "live_status": int(d.get("liveStatus") or 0),
+            "live_status": self._int(d.get("liveStatus"), 0, min_val=0),
         }
 
     @staticmethod
-    def _latest_non_top_dynamic_id(items: list[dict[str, Any]]) -> str:
-        """提取最新非置顶动态 id（用于订阅锚点，避免置顶导致漏推）。"""
-        for item in items:
-            if is_top_dynamic(item):
-                continue
-            dyn_id = str(item.get("id_str") or "")
-            if dyn_id:
-                return dyn_id
-        return ""
+    def _is_living(live_info: dict[str, Any] | None) -> bool:
+        if not isinstance(live_info, dict):
+            return False
+        return BiliAllPlugin._int(live_info.get("live_status"), 0, min_val=0) == 1
 
     # ───────────────────── 订阅处理 ─────────────────────
 
     def _upsert_subscription(
-        self, session: str, uid: int,
-        filter_types: list[str], filter_regex: list[str],
+        self,
+        session: str,
+        uid: int,
+        filter_types: list[str],
+        filter_regex: list[str],
         latest_dyn_id: str = "",
     ) -> tuple[Subscription, bool]:
         subs = self.subscriptions.setdefault(session, [])
@@ -726,93 +1341,135 @@ class BiliAllPlugin(Star):
                 sub.filter_regex = filter_regex
                 return sub, True
         new = Subscription(
-            uid=uid, last_dynamic_id=latest_dyn_id,
-            filter_types=filter_types, filter_regex=filter_regex,
+            uid=uid,
+            last_dynamic_id=latest_dyn_id,
+            filter_types=filter_types,
+            filter_regex=filter_regex,
         )
         subs.append(new)
         return new, False
 
     async def _process_sub(
-        self, session: str, sub: Subscription,
-        dyn_items: list[dict[str, Any]], live_info: dict[str, Any] | None,
+        self,
+        session: str,
+        sub: Subscription,
+        dyn_items: list[dict[str, Any]],
+        live_info: dict[str, Any] | None,
     ) -> bool:
+        """处理单个订阅：推送**最新**未读动态并更新去重锚点。"""
         changed = False
         known = {sub.last_dynamic_id, *(sub.recent_ids or [])} - {""}
 
-        new_items: list[dict[str, Any]] = []
-        for item in dyn_items:
-            if is_top_dynamic(item):
-                continue
-            dyn_id = str(item.get("id_str") or "")
-            if not dyn_id or dyn_id in known:
-                break
-            new_items.append(item)
-
-        sent = 0
-        for item in reversed(new_items):
-            dyn_id = str(item.get("id_str") or "")
-            if not dyn_id:
-                continue
-            if not should_filter_dynamic(item, sub) and sent < self.dynamic_limit:
-                await self.context.send_message(
-                    session, MessageEventResult(chain=build_dynamic_chain(item)),
-                )
-                sent += 1
-            sub.last_dynamic_id = dyn_id
-            append_recent_id(sub, dyn_id, self.recent_ids_limit)
+        new_items = collect_new_dynamics(dyn_items, known)
+        if new_items:
+            # 只推送最新的 dynamic_limit 条，但**全部**标记为已读，避免重复轰炸
+            for item in reversed(new_items):  # 按时间正序写入，便于 LRU 淘汰最旧的
+                append_recent_id(sub, str(item.get("id_str") or ""), self.recent_ids_limit)
+            sub.last_dynamic_id = str(new_items[0].get("id_str") or "")
             changed = True
+            # 正则只编译一次（每次轮询每条订阅一次），避免热路径反复编译
+            compiled = compile_filter_patterns(sub.filter_regex)
+            for item in pick_push_batch(new_items, self.dynamic_limit):
+                if should_filter_dynamic(item, sub, compiled):
+                    continue
+                if await self._safe_send(session, build_dynamic_chain(item), "dynamic_push"):
+                    self.stats["dynamic_pushes"] += 1
 
         # 直播状态变更
         if live_info and "live" not in (sub.filter_types or []):
-            now_live = int(live_info.get("live_status") or 0) == 1
+            now_live = self._is_living(live_info)
             if now_live != sub.is_live:
                 sub.is_live = now_live
                 changed = True
-                uname = live_info.get("uname") or f"UID {sub.uid}"
-                live_info.setdefault("uname", uname)
-                await self.context.send_message(
+                live_info.setdefault("uname", live_info.get("uname") or f"UID {sub.uid}")
+                if await self._safe_send(
                     session,
-                    MessageEventResult(chain=build_live_chain(live_info, now_live=now_live)),
-                )
+                    build_live_chain(live_info, now_live=now_live),
+                    "live_push",
+                ):
+                    self.stats["live_pushes"] += 1
         return changed
 
-    async def _poll_loop(self):
+    async def _poll_uid(
+        self,
+        uid: int,
+        targets: list[tuple[str, Subscription]],
+        sem: asyncio.Semaphore,
+    ) -> bool:
+        async with sem:
+            dyn_res, live_res = await asyncio.gather(
+                self._fetch_dynamic_items(uid),
+                self._fetch_live_status(uid),
+                return_exceptions=True,
+            )
+        # 任务间隔放在信号量之外，避免占用并发额度
+        if self.uid_task_gap_seconds > 0:
+            await asyncio.sleep(self.uid_task_gap_seconds)
+
+        dyn_items: list[dict[str, Any]]
+        if isinstance(dyn_res, BaseException):
+            self.logger.warning("拉取动态失败 uid=%s: %s", uid, dyn_res)
+            dyn_items = []
+        else:
+            dyn_items = dyn_res
+        live: dict[str, Any] | None
+        if isinstance(live_res, BaseException):
+            self.logger.warning("拉取直播状态失败 uid=%s: %s", uid, live_res)
+            live = None
+        else:
+            live = live_res
+
+        changed = False
+        for session, sub in targets:
+            if await self._process_sub(session, sub, dyn_items, live):
+                changed = True
+        return changed
+
+    async def _poll_once(self) -> bool:
+        """执行一轮轮询，返回是否有订阅状态发生变化。"""
+        targets = build_uid_targets(self.subscriptions)
+        if not targets:
+            return False
+        self.stats["poll_cycles"] += 1
+        sem = asyncio.Semaphore(max(1, self.uid_concurrency))
+        results = await asyncio.gather(
+            *(self._poll_uid(uid, subs, sem) for uid, subs in targets.items()),
+            return_exceptions=True,
+        )
+        changed = False
+        for (uid, _subs), res in zip(targets.items(), results, strict=False):
+            if isinstance(res, BaseException):
+                self.stats["poll_errors"] += 1
+                self.logger.warning("轮询 UID %s 失败: %s", uid, res)
+                continue
+            changed = changed or res
+        return changed
+
+    async def _poll_loop(self) -> None:
+        """轮询主循环：异常不退出，取消时正常收尾。"""
         while self._running:
             try:
                 t0 = time.monotonic()
-                changed = False
-                uid_targets = build_uid_targets(self.subscriptions)
-                for uid, targets in uid_targets.items():
-                    dyn_res, live_res = await asyncio.gather(
-                        self._fetch_dynamic_items(uid),
-                        self._fetch_live_status(uid),
-                        return_exceptions=True,
-                    )
-                    dyn_items = dyn_res if isinstance(dyn_res, list) else []
-                    live = live_res if isinstance(live_res, dict) else None
-                    if isinstance(dyn_res, Exception):
-                        logger.warning("拉取动态失败 uid=%s: %s", uid, dyn_res)
-                    if isinstance(live_res, Exception):
-                        logger.warning("拉取直播状态失败 uid=%s: %s", uid, live_res)
-                    for sess, sub in targets:
-                        if await self._process_sub(sess, sub, dyn_items, live):
-                            changed = True
-                    if self.uid_task_gap_seconds > 0:
-                        await asyncio.sleep(self.uid_task_gap_seconds)
-
-                if changed:
+                if await self._poll_once():
                     self._save_subscriptions()
                 await asyncio.sleep(max(0.0, self.poll_interval_seconds - (time.monotonic() - t0)))
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:
-                logger.error("订阅轮询异常: %s", exc)
+            except Exception as exc:  # noqa: BLE001 - 轮询需永不退出
+                self.stats["poll_errors"] += 1
+                self.logger.error("订阅轮询异常: %s", exc)
                 await asyncio.sleep(5)
 
     # ───────────────────── 状态自检 ─────────────────────
 
     def _is_admin(self, event: AstrMessageEvent) -> bool:
-        return str(event.get_sender_id()) in self.admin_ids
+        """管理员判定：配置白名单 或 AstrBot 原生管理员身份。"""
+        if str(event.get_sender_id()) in self.admin_ids:
+            return True
+        try:
+            return bool(event.is_admin())
+        except Exception:  # noqa: BLE001 - 兼容旧版本事件对象
+            return False
 
     def _validate_config(self) -> tuple[list[str], list[str]]:
         errors: list[str] = []
@@ -823,30 +1480,49 @@ class BiliAllPlugin(Star):
             ("poll_interval_seconds", "subscription.poll_interval_seconds"),
             ("timeout_seconds", "subscription.timeout_seconds"),
             ("dynamic_limit", "subscription.dynamic_limit"),
+            ("uid_concurrency", "subscription.uid_concurrency"),
         ):
             if getattr(self, attr, 0) <= 0:
                 errors.append(f"{label} 必须 > 0")
         for attr, label in (
             ("video_max_duration_seconds", "video_download.max_duration_seconds"),
             ("video_max_size_mb", "video_download.max_size_mb"),
+            ("uid_task_gap_seconds", "subscription.uid_task_gap_seconds"),
+            ("empty_retry_count", "subscription.empty_retry_count"),
         ):
             if getattr(self, attr, -1) < 0:
-                errors.append(f"{label} 必须 >= 0（0 表示不限制）")
-        qn = QUALITY_TO_QN.get(self.video_quality_label, 64)
+                errors.append(f"{label} 必须 >= 0")
+        qn = QUALITY_TO_QN.get(self.video_quality_label, DEFAULT_QN)
         if self.enable_video_download and qn >= 80 and not self.bili_cookie:
             warnings.append("已启用高画质下载但未填写 Cookie，可能无法获取 1080P 及以上")
         if self.bili_cookie and "SESSDATA=" not in self.bili_cookie:
             warnings.append("Cookie 中未检测到 SESSDATA，登录态可能无效")
+        if self.bili_cookie and len(self.bili_cookie) > 4096:
+            errors.append("video_download.bili_cookie 过长（> 4096 字符），请只粘贴 Cookie 本身")
+        if self.empty_retry_count == 0:
+            warnings.append(
+                "subscription.empty_retry_count 为 0：B站动态接口会偶发返回空结果，建议保持 > 0 以免漏推最新动态",
+            )
+        if self.poll_interval_seconds < 60:
+            warnings.append("轮询周期小于 60 秒，可能触发 B站风控")
+        if self.uid_concurrency > 10:
+            warnings.append("subscription.uid_concurrency 大于 10，并发过高容易触发风控")
+        if self.min_request_interval_seconds <= 0:
+            warnings.append("subscription.min_request_interval_seconds 为 0，请求无节流，建议 ≥ 0.1")
+        if self.recent_ids_limit < 5:
+            warnings.append("subscription.recent_ids_limit 过小，可能重复推送历史动态")
         return errors, warnings
 
     async def _check_cookie(self) -> tuple[str, str]:
-        payload = await self._get_json(
-            "https://api.bilibili.com/x/web-interface/nav", {}, scene="nav",
-        )
+        payload = await self._get_json(API_NAV, {}, scene="nav")
         if not payload:
             return "fail", "请求 nav 接口失败（网络或超时）"
-        if payload.get("code") != 0:
-            return "fail", f"nav 接口返回错误 code={payload.get('code')}"
+        code = payload.get("code")
+        if code != 0:
+            if self.bili_cookie:
+                return "fail", f"Cookie 校验失败：nav 接口返回 code={code}，Cookie 可能已失效"
+            # 匿名访问 nav 时返回 -101（未登录）属于正常现象，不应报错
+            return "warn", f"未配置 Cookie（匿名模式，nav code={code}），下载画质可能受限"
         data = payload.get("data") or {}
         logged_in = bool(data.get("isLogin"))
         uname = str(data.get("uname") or "")
@@ -864,11 +1540,14 @@ class BiliAllPlugin(Star):
         loop_msg = "轮询任务运行中" if loop_ok else "轮询任务未运行"
 
         test_uid: int | None = None
-        for subs in (self.subscriptions.get(session, []),
-                     *(self.subscriptions.values() if self.subscriptions else [])):
-            if subs:
-                test_uid = subs[0].uid
-                break
+        candidates = list(self.subscriptions.get(session, []))
+        if not candidates:
+            for subs in self.subscriptions.values():
+                if subs:
+                    candidates = list(subs)
+                    break
+        if candidates:
+            test_uid = candidates[0].uid
         if not test_uid:
             return "warn", f"当前无订阅数据（sessions={len(self.subscriptions)}, subs={total}，{loop_msg}）"
 
@@ -884,13 +1563,22 @@ class BiliAllPlugin(Star):
     # ───────────────────── 指令：公共辅助 ─────────────────────
 
     @staticmethod
-    def _parse_uid_args(args: Sequence[str], uid_pos: int = 1) -> tuple[int, list[str], list[str]] | None:
-        """从命令参数提取 (uid, filter_types, filter_regex)，失败返回 None。"""
-        uid_str = args[uid_pos] if len(args) > uid_pos else ""
-        if not uid_str.isdigit():
+    def _parse_uid_args(
+        args: Sequence[str],
+        uid_pos: int = 1,
+    ) -> ParsedUidArgs | None:
+        """从命令参数提取 UID 与过滤器。
+
+        * UID 缺失/非法 → 返回 ``None``（调用方给出通用用法提示）；
+        * 过滤器非法（正则过长/语法错误/条数超限）→ 返回 ``ParsedUidArgs.error``，
+          调用方应把 ``error`` 原文回显给用户，而不是静默忽略。
+        """
+        uid_str = args[uid_pos].strip() if len(args) > uid_pos else ""
+        if not is_valid_uid(uid_str):
             return None
-        ft, fr = parse_filter_args(list(args[uid_pos + 1:]), VALID_FILTER_TYPES)
-        return int(uid_str), ft, fr
+        ft, fr = parse_filter_args(list(args[uid_pos + 1 :]), VALID_FILTER_TYPES)
+        error = validate_filter_patterns(fr)
+        return ParsedUidArgs(uid=int(uid_str), filter_types=ft, filter_regex=fr, error=error)
 
     @staticmethod
     def _fmt_filter(ft: list[str], fr: list[str]) -> str:
@@ -902,63 +1590,113 @@ class BiliAllPlugin(Star):
         return ("\n" + "\n".join(parts)) if parts else ""
 
     @staticmethod
-    def _fmt_sub(sub: Subscription) -> str:
+    def _fmt_filter_inline(sub: Subscription) -> str:
+        """单行过滤器摘要，用于列表排版。"""
         parts: list[str] = []
         if sub.filter_types:
-            parts.append("types=" + ",".join(sub.filter_types))
+            parts.append("类型 " + "、".join(sub.filter_types))
         if sub.filter_regex:
-            parts.append("regex=" + ",".join(sub.filter_regex))
-        return f" ({'; '.join(parts)})" if parts else ""
+            parts.append("正则 " + "、".join(sub.filter_regex))
+        return "、".join(parts) if parts else "无"
+
+    @staticmethod
+    def _fmt_sub_line(index: int, sub: Subscription) -> str:
+        """订阅列表单行排版：``1) UID 2 ｜ 状态: 直播中 ｜ 过滤: 无``。"""
+        state = "直播中" if sub.is_live else "未开播"
+        return f"{index}) UID {sub.uid} ｜ 状态: {state} ｜ 过滤: {BiliAllPlugin._fmt_filter_inline(sub)}"
+
+    async def _prepare_new_subscription(
+        self,
+        session: str,
+        uid: int,
+        ft: list[str],
+        fr: list[str],
+    ) -> tuple[Subscription, bool]:
+        """建立/更新订阅；新订阅会抓取锚点动态与初始直播状态，避免误报开播。"""
+        items = await self._fetch_dynamic_items(uid)
+        anchor = latest_dynamic_id(items)
+        sub, exists = self._upsert_subscription(session, uid, ft, fr, anchor)
+        if not exists:
+            sub.is_live = self._is_living(await self._fetch_live_status(uid))
+        self._save_subscriptions()
+        return sub, exists
 
     # ───────────────────── 指令：自检 ─────────────────────
 
     @filter.command("bili_state")
-    async def cmd_bili_state(self, event: AstrMessageEvent):
+    async def cmd_bili_state(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """插件状态自检。"""
         self._refresh_config()
         errors, warnings = self._validate_config()
-        lines: list[str] = ["bili_state 自检结果"]
+        lines: list[str] = [f"bili_state 自检结果（v{PLUGIN_VERSION} / {PLUGIN_DISPLAY_NAME}）"]
 
         if errors:
-            lines.append("\n[FAIL] 配置检查未通过：")
+            lines.append("\n❌ 配置检查未通过：")
             lines.extend(f"- {e}" for e in errors)
             if warnings:
-                lines.append("\n[WARN] 配置警告：")
+                lines.append("\n⚠️ 配置警告：")
                 lines.extend(f"- {w}" for w in warnings)
             lines.append("\n请先修复配置后再执行 /bili_state。")
             yield event.plain_result("\n".join(lines))
             return
 
-        lines.append("\n[OK] 配置检查通过")
+        lines.append("\n✅ 配置检查通过")
         if warnings:
-            lines.append("[WARN] 配置警告：")
+            lines.append("⚠️ 配置警告：")
             lines.extend(f"- {w}" for w in warnings)
 
-        icon = lambda s: {"ok": "[OK]", "warn": "[WARN]"}.get(s, "[FAIL]")  # noqa: E731
-        cs, cm = await self._check_cookie()
-        lines.append(f"\n{icon(cs)} Cookie检查：{cm}")
-        ss, sm = await self._check_subscription(self._session_key(event))
-        lines.append(f"{icon(ss)} 订阅检查：{sm}")
+        cookie_status, cookie_msg = await self._check_cookie()
+        lines.append(f"\n{_status_icon(cookie_status)} Cookie检查：{cookie_msg}")
+        sub_status, sub_msg = await self._check_subscription(self._session_key(event))
+        lines.append(f"{_status_icon(sub_status)} 订阅检查：{sub_msg}")
 
         lines.append("\n功能开关：")
-        lines.extend([
-            f"- 链接解析: {'开启' if self.enable_bili_parse else '关闭'}",
-            f"- 下载发送: {'开启' if self.enable_video_download else '关闭'}",
-            f"- 下载画质: {self.video_quality_label}",
-            f"- 时长上限: {'不限制' if self.video_max_duration_seconds == 0 else f'{self.video_max_duration_seconds}s'}",
-            f"- 大小上限: {'不限制' if self.video_max_size_mb == 0 else f'{self.video_max_size_mb}MB'}",
-            f"- 自动删缓存: {'是' if self.video_auto_delete else '否'}",
-        ])
+        lines.extend(
+            [
+                f"- 链接解析: {'开启' if self.enable_bili_parse else '关闭'}",
+                f"- 视频信息回复: {'开启' if self.send_video_info else '关闭'}",
+                f"- 下载发送: {'开启' if self.enable_video_download else '关闭'}",
+                f"- 下载画质: {self.video_quality_label}",
+                f"- LLM 工具: {'开启' if self.enable_llm_tool else '关闭'}",
+                f"- 时长上限: {'不限制' if self.video_max_duration_seconds == 0 else f'{self.video_max_duration_seconds}s'}",
+                f"- 大小上限: {'不限制' if self.video_max_size_mb == 0 else f'{self.video_max_size_mb}MB'}",
+                f"- 自动删缓存: {'是' if self.video_auto_delete else '否'}",
+            ]
+        )
 
-        lines.append("\n重试策略：")
-        lines.extend([
-            f"- 轮询重试: 0（零重试）",
-            f"- 解析/自检重试: {self.http_retry_count}",
-            f"- 下载重试: {self.video_retry_count}",
-            f"- 重试间隔: {self.http_retry_delay_seconds}s × 次数",
-        ])
+        lines.append("\n轮询策略：")
+        lines.extend(
+            [
+                "- 轮询重试: 0（零重试，避免轮询内堆积）",
+                f"- 空响应重试: {self.empty_retry_count}（间隔 {self.empty_retry_delay_seconds}s 递增）",
+                f"- UID 并发: {self.uid_concurrency}",
+                f"- 请求节流: {self.min_request_interval_seconds}s/次",
+                f"- 解析/自检重试: {self.http_retry_count}",
+                f"- 下载重试: {self.video_retry_count}",
+                f"- 重试间隔: {self.http_retry_delay_seconds}s × 次数",
+            ]
+        )
 
-        final = "fail" if "fail" in (cs, ss) else ("warn" if "warn" in (cs, ss) or warnings else "ok")
+        snap = self.health_snapshot()
+        stats = snap["stats"]
+        lines.append("\n运行统计：")
+        lines.extend(
+            [
+                f"- 已运行: {snap['uptime_seconds']}s（轮询轮次 {stats['poll_cycles']}）",
+                f"- 请求: {stats['http_requests']} 次（失败 {stats['http_failures']}，静默降级 {stats['http_silent']}）",
+                f"- 推送: 动态 {stats['dynamic_pushes']} 条 / 直播 {stats['live_pushes']} 次",
+                f"- 下载: {stats['downloads']} 个（{format_bytes(stats['download_bytes'])}）",
+                f"- 发送失败: {stats['send_failures']} 次，轮询异常: {stats['poll_errors']} 次",
+                f"- 登录态: {snap['cookie_masked'] or '未配置'}",
+                f"- 数据版本: {snap['schema_version']}",
+            ]
+        )
+
+        final = (
+            "fail"
+            if "fail" in (cookie_status, sub_status)
+            else ("warn" if "warn" in (cookie_status, sub_status) or warnings else "ok")
+        )
         tail = {
             "ok": "\n自检通过：核心功能可用。",
             "warn": "\n自检完成：存在警告，请按提示优化配置。",
@@ -969,78 +1707,105 @@ class BiliAllPlugin(Star):
     # ───────────────────── 指令：订阅管理 ─────────────────────
 
     @filter.command("bili_sub")
-    async def cmd_bili_sub(self, event: AstrMessageEvent):
+    async def cmd_bili_sub(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """订阅UP主动态。用法：/bili_sub <UID> [过滤器...]"""
         parsed = self._parse_uid_args((event.message_str or "").split())
         if not parsed:
             yield event.plain_result("参数错误。用法：/bili_sub <B站UID> [过滤器...]")
             return
-        uid, ft, fr = parsed
+        if parsed.error:
+            yield event.plain_result(f"过滤器无效：{parsed.error}")
+            return
+        uid, ft, fr = parsed.uid, parsed.filter_types, parsed.filter_regex
         session = self._session_key(event)
-        items = await self._fetch_dynamic_items(uid)
-        last_id = self._latest_non_top_dynamic_id(items)
-        _, exists = self._upsert_subscription(session, uid, ft, fr, last_id)
-        self._save_subscriptions()
+        limit_msg = self._check_subscription_quota(session, uid)
+        if limit_msg:
+            yield event.plain_result(limit_msg)
+            return
+        _, exists = await self._prepare_new_subscription(session, uid, ft, fr)
         detail = self._fmt_filter(ft, fr)
         if exists:
             yield event.plain_result(f"该 UID 已订阅，已更新过滤条件：{uid}{detail}")
         else:
-            yield event.plain_result(f"订阅成功：UID {uid}{detail}")
+            yield event.plain_result(f"订阅成功：UID {uid}{detail}\n新的动态将由后台轮询推送。")
+
+    def _check_subscription_quota(self, session: str, uid: int) -> str:
+        """检查订阅配额，超限时返回提示文案（未超限返回空串）。"""
+        subs = self.subscriptions.get(session, [])
+        if any(s.uid == uid for s in subs):
+            return ""
+        if len(subs) >= MAX_SUBS_PER_SESSION:
+            return f"订阅已达上限（单会话最多 {MAX_SUBS_PER_SESSION} 个），请先取消部分订阅。"
+        if session not in self.subscriptions and len(self.subscriptions) >= MAX_SESSIONS:
+            return f"会话数已达上限（{MAX_SESSIONS}），请联系管理员清理。"
+        return ""
 
     @filter.command("bili_sub_del")
-    async def cmd_bili_sub_del(self, event: AstrMessageEvent):
+    async def cmd_bili_sub_del(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """取消订阅。用法：/bili_sub_del <UID>"""
         args = (event.message_str or "").split()
-        uid_str = args[1] if len(args) >= 2 else ""
-        if not uid_str.isdigit():
+        uid_str = args[1].strip() if len(args) >= 2 else ""
+        if not is_valid_uid(uid_str):
             yield event.plain_result("参数错误。用法：/bili_sub_del <B站UID>")
             return
         session = self._session_key(event)
         uid = int(uid_str)
+        if not self._remove_subscription(session, uid):
+            yield event.plain_result("未找到该订阅。")
+            return
+        self._save_subscriptions()
+        yield event.plain_result(f"已取消订阅 UID {uid}")
+
+    def _remove_subscription(self, session: str, uid: int) -> bool:
+        """删除指定会话下的订阅，返回是否真的删除了。"""
         old = self.subscriptions.get(session, [])
         new = [s for s in old if s.uid != uid]
         if len(new) == len(old):
-            yield event.plain_result("未找到该订阅。")
-            return
+            return False
         if new:
             self.subscriptions[session] = new
         else:
             self.subscriptions.pop(session, None)
-        self._save_subscriptions()
-        yield event.plain_result(f"已取消订阅 UID {uid}")
+        return True
 
     @filter.command("bili_sub_list")
-    async def cmd_bili_sub_list(self, event: AstrMessageEvent):
+    async def cmd_bili_sub_list(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """查看当前会话订阅列表。"""
         subs = self.subscriptions.get(self._session_key(event), [])
         if not subs:
-            yield event.plain_result("当前会话没有订阅。")
+            yield event.plain_result("当前会话没有订阅。使用 /bili_sub <UID> 添加。")
             return
-        lines = ["当前订阅列表："]
-        for i, s in enumerate(subs, 1):
-            lines.append(f"{i}. UID {s.uid}{self._fmt_sub(s)}")
+        lines = [f"当前会话订阅列表（共 {len(subs)} 个）："]
+        lines.extend(self._fmt_sub_line(i, s) for i, s in enumerate(subs, 1))
         yield event.plain_result("\n".join(lines))
 
     @filter.command("bili_sub_test")
-    async def cmd_bili_sub_test(self, event: AstrMessageEvent):
+    async def cmd_bili_sub_test(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """测试动态抓取与过滤。用法：/bili_sub_test <UID> [过滤器...]"""
         parsed = self._parse_uid_args((event.message_str or "").split())
         if not parsed:
             yield event.plain_result("参数错误。用法：/bili_sub_test <B站UID> [过滤器...]")
             return
-        uid, ft, fr = parsed
+        if parsed.error:
+            yield event.plain_result(f"过滤器无效：{parsed.error}")
+            return
+        uid, ft, fr = parsed.uid, parsed.filter_types, parsed.filter_regex
         test_sub = Subscription(uid=uid, filter_types=ft, filter_regex=fr)
         items = await self._fetch_dynamic_items(uid)
         if not items:
-            yield event.plain_result("未获取到动态数据，请稍后重试。")
+            yield event.plain_result(
+                "未获取到动态数据（B站接口偶发返回空结果），请稍后重试。",
+            )
             return
-        for item in items:
-            if is_top_dynamic(item) or should_filter_dynamic(item, test_sub):
+        candidates = collect_new_dynamics(items, set())
+        compiled = compile_filter_patterns(fr)
+        for item in candidates:
+            if should_filter_dynamic(item, test_sub, compiled):
                 continue
             chain = build_dynamic_chain(item)
             detail = self._fmt_filter(ft, fr)
             if detail:
-                chain.append(Comp.Plain(f"\n\n测试过滤条件: {detail.strip()}"))
+                chain.append(Comp.Plain(f"\n测试过滤条件: {detail.strip()}"))
             yield event.chain_result(chain)
             return
         yield event.plain_result("测试完成：最新动态都被当前过滤条件过滤掉了。")
@@ -1048,7 +1813,7 @@ class BiliAllPlugin(Star):
     # ───────────────────── 指令：管理员 ─────────────────────
 
     @filter.command("bili_global_sub")
-    async def cmd_bili_global_sub(self, event: AstrMessageEvent):
+    async def cmd_bili_global_sub(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """管理员全局订阅。用法：/bili_global_sub <会话UMO> <UID> [过滤器...]"""
         if not self._is_admin(event):
             yield event.plain_result("无权限：仅管理员可使用该指令。")
@@ -1057,19 +1822,25 @@ class BiliAllPlugin(Star):
         session = args[1].strip() if len(args) >= 3 else ""
         parsed = self._parse_uid_args(args, uid_pos=2) if len(args) >= 3 else None
         if not session or not parsed:
-            yield event.plain_result("参数错误。用法：/bili_global_sub <会话UMO> <B站UID> [过滤器...]")
+            yield event.plain_result(
+                "参数错误。用法：/bili_global_sub <会话UMO> <B站UID> [过滤器...]",
+            )
             return
-        uid, ft, fr = parsed
-        items = await self._fetch_dynamic_items(uid)
-        last_id = self._latest_non_top_dynamic_id(items)
-        _, exists = self._upsert_subscription(session, uid, ft, fr, last_id)
-        self._save_subscriptions()
+        if parsed.error:
+            yield event.plain_result(f"过滤器无效：{parsed.error}")
+            return
+        uid, ft, fr = parsed.uid, parsed.filter_types, parsed.filter_regex
+        limit_msg = self._check_subscription_quota(session, uid)
+        if limit_msg:
+            yield event.plain_result(limit_msg)
+            return
+        _, exists = await self._prepare_new_subscription(session, uid, ft, fr)
         yield event.plain_result(
-            f"{'已更新' if exists else '已添加'}全局订阅：{session} -> UID {uid}"
+            f"{'已更新' if exists else '已添加'}全局订阅：{session} -> UID {uid}",
         )
 
     @filter.command("bili_global_del")
-    async def cmd_bili_global_del(self, event: AstrMessageEvent):
+    async def cmd_bili_global_del(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """管理员删除全局订阅。用法：/bili_global_del <会话UMO> [UID]"""
         if not self._is_admin(event):
             yield event.plain_result("无权限：仅管理员可使用该指令。")
@@ -1092,20 +1863,14 @@ class BiliAllPlugin(Star):
             yield event.plain_result("UID 必须是数字。")
             return
         uid = int(uid_str)
-        old = self.subscriptions.get(session, [])
-        new = [s for s in old if s.uid != uid]
-        if len(new) == len(old):
+        if not self._remove_subscription(session, uid):
             yield event.plain_result("未找到指定订阅。")
             return
-        if new:
-            self.subscriptions[session] = new
-        else:
-            self.subscriptions.pop(session, None)
         self._save_subscriptions()
         yield event.plain_result(f"已删除全局订阅：{session} -> UID {uid}")
 
     @filter.command("bili_global_list")
-    async def cmd_bili_global_list(self, event: AstrMessageEvent):
+    async def cmd_bili_global_list(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
         """管理员查看全局订阅。"""
         if not self._is_admin(event):
             yield event.plain_result("无权限：仅管理员可使用该指令。")
@@ -1113,27 +1878,31 @@ class BiliAllPlugin(Star):
         if not self.subscriptions:
             yield event.plain_result("当前没有任何订阅。")
             return
-        lines: list[str] = ["全局订阅列表："]
+        lines: list[str] = [
+            f"全局订阅列表（{len(self.subscriptions)} 个会话 / {self._sub_count()} 个订阅）：",
+        ]
         for session, subs in self.subscriptions.items():
             if not subs:
                 continue
-            lines.append(f"- {session}")
-            for s in subs:
-                lines.append(f"  • UID {s.uid}{self._fmt_sub(s)}")
+            lines.append(f"▸ {session}")
+            lines.extend(f"  {self._fmt_sub_line(i, s)}" for i, s in enumerate(subs, 1))
         yield event.plain_result("\n".join(lines))
 
     # ───────────────────── 消息事件：链接解析 ─────────────────────
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
-    async def handle_bili_parse(self, event: AstrMessageEvent):
+    async def handle_bili_parse(self, event: AstrMessageEvent) -> None:
+        """统一解析普通文本与 QQ 小程序 JSON 卡片中的 B站视频链接。"""
         if not self.enable_bili_parse or event.get_sender_id() == event.get_self_id():
             return
 
         ref: dict[str, Any] | None = None
         matched = False
+        # 超长消息（刷屏/粘贴日志）不参与扫描，避免拖慢事件处理
+        message_text = str(event.message_str or "")[:MAX_MESSAGE_SCAN_LEN]
 
         # 1. 纯文本提取
-        tokens = extract_links_and_ids(event.message_str or "")
+        tokens = extract_links_and_ids(message_text)
         if tokens:
             matched = True
             ref = await self._extract_video_ref_from_tokens(tokens)
@@ -1146,15 +1915,47 @@ class BiliAllPlugin(Star):
                 matched = True
                 ref = await self._extract_video_ref_from_tokens(bili_links)
                 if not ref:
-                    logger.warning("从 QQ 小程序卡片提取到 B站链接但无法解析: %s", bili_links)
+                    self.logger.warning("从 QQ 小程序卡片提取到 B站链接但无法解析: %s", bili_links)
 
         if matched:
             event.stop_event()
-        if not ref:
+        if not ref or not (self.send_video_info or self.enable_video_download):
             return
 
-        # 可选下载（不再展示视频详细信息）
-        info = await self._get_video_info(
-            ref, retry_count=self.video_retry_count,
-        ) if self.enable_video_download else None
+        info = await self._get_video_info(ref, retry_count=self.video_retry_count)
+        if info and self.send_video_info:
+            await self._safe_send(
+                event.unified_msg_origin,
+                build_video_chain(info, ref),
+                "video_info",
+            )
         await self._send_video_download(event, ref, info)
+
+    # ───────────────────── LLM 函数工具 ─────────────────────
+
+    @filter.llm_tool(name="bili_video_info")
+    async def llm_bili_video_info(
+        self,
+        event: AstrMessageEvent,
+        url: str,
+    ) -> str:
+        """解析 B 站视频链接、BV 号或 av 号，返回视频标题、UP主、播放量、时长等信息。
+
+        Args:
+            url(string): B 站视频链接、BV 号或 av 号
+        """
+        if not self.enable_llm_tool:
+            return "B站链接解析工具当前已被插件配置关闭。"
+        raw = str(url or "").strip()
+        if len(raw) > MAX_LLM_URL_LEN:
+            return f"输入过长（>{MAX_LLM_URL_LEN} 字符），请只提供 B站视频链接、BV 号或 av 号。"
+        tokens = extract_links_and_ids(raw)
+        if not tokens and raw:
+            tokens = [raw]
+        ref = await self._extract_video_ref_from_tokens(tokens)
+        if not ref:
+            return "未能识别 B站视频标识：请提供 bilibili.com/video 链接、BV 号或 av 号。"
+        info = await self._get_video_info(ref, retry_count=self.video_retry_count)
+        if not info:
+            return "视频信息获取失败，请稍后重试。"
+        return build_video_text(info, ref)

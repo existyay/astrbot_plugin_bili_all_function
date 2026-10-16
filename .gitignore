@@ -51,6 +51,10 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# AstrBot 插件运行时数据（订阅数据、下载缓存、本地调试时的 data/templates）
+data/
+downloads/
+
 # Translations
 *.mo
 *.pot

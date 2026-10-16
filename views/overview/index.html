@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B站插件概览</title>
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --text: #1f2329;
+    --muted: #6b7280;
+    --line: #e6e8ee;
+    --brand: #fb7299;
+    --brand-2: #23ade5;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --err: #dc2626;
+  }
+  html[data-theme="dark"] {
+    --bg: #16181d;
+    --card: #1f2229;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --line: #2c313a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 20px;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 12px; flex: 0 0 auto;
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  }
+  h1 { font-size: 18px; margin: 0; }
+  .sub { color: var(--muted); font-size: 12px; margin: 2px 0 0; }
+  .grow { flex: 1 1 auto; }
+  .actions { display: flex; align-items: center; gap: 8px; }
+  button {
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+  }
+  button:hover { border-color: var(--brand); color: var(--brand); }
+  label.switch { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+    border-radius: 999px; font-size: 12px; border: 1px solid var(--line);
+  }
+  .badge.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .badge.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-top: 16px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px;
+  }
+  .card h2 { font-size: 13px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+  .metric { font-size: 22px; font-weight: 700; letter-spacing: .5px; }
+  .metric small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
+  .kv span:first-child { color: var(--muted); }
+  .kv span:last-child { font-variant-numeric: tabular-nums; text-align: right; word-break: break-all; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); }
+  .pill.on { color: var(--ok); }
+  .pill.off { color: var(--muted); }
+  footer { margin-top: 18px; color: var(--muted); font-size: 12px; text-align: center; }
+  .error {
+    margin-top: 16px; border: 1px solid color-mix(in srgb, var(--err) 40%, transparent);
+    color: var(--err); background: var(--card); border-radius: 12px; padding: 12px;
+  }
+  .skeleton { height: 12px; border-radius: 6px; background: var(--line); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: .45 } 50% { opacity: .9 } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" aria-hidden="true"></div>
+    <div>
+      <h1 id="title">B站插件概览</h1>
+      <p class="sub" id="subtitle">运行状态、订阅规模与功能开关一览</p>
+    </div>
+    <div class="grow"></div>
+    <div class="actions">
+      <span class="badge" id="status"><span id="status-text">…</span></span>
+      <label class="switch"><input type="checkbox" id="auto"> <span id="auto-label">自动刷新（30s）</span></label>
+      <button id="refresh" type="button">刷新</button>
+    </div>
+  </header>
+
+  <div class="grid" id="metrics" hidden></div>
+  <div class="grid" id="panels" hidden></div>
+  <div class="error" id="error" hidden></div>
+  <div class="grid" id="skeleton">
+    <div class="card"><div class="skeleton" style="width:60%"></div></div>
+    <div class="card"><div class="skeleton" style="width:80%"></div></div>
+    <div class="card"><div class="skeleton" style="width:45%"></div></div>
+  </div>
+  <footer id="footer"></footer>
+</div>
+
+<script src="/api/plugin/page/bridge-sdk.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var bridge = window.AstrBotPluginView;
+  var state = { timer: null, data: null };
+
+  function t(key, fallback, vars) {
+    var text = bridge && typeof bridge.t === "function" ? bridge.t(key, fallback) : fallback;
+    if (!text) { text = fallback || ""; }
+    if (vars) {
+      Object.keys(vars).forEach(function (name) {
+        text = text.replace(new RegExp("\\{" + name + "\\}", "g"), String(vars[name]));
+      });
+    }
+    return text;
+  }
+
+  function fmtDuration(seconds) {
+    var total = Math.max(0, Number(seconds) || 0);
+    var d = Math.floor(total / 86400);
+    var h = Math.floor((total % 86400) / 3600);
+    var m = Math.floor((total % 3600) / 60);
+    var s = Math.floor(total % 60);
+    if (d > 0) { return d + "d " + h + "h"; }
+    if (h > 0) { return h + "h " + m + "m"; }
+    if (m > 0) { return m + "m " + s + "s"; }
+    return s + t("views.overview.seconds", "秒");
+  }
+
+  function fmtBytes(size) {
+    var value = Number(size) || 0;
+    var units = ["B", "KB", "MB", "GB"];
+    var i = 0;
+    while (value >= 1024 && i < units.length - 1) { value /= 1024; i += 1; }
+    return (i === 0 ? value.toFixed(0) : value.toFixed(1)) + units[i];
+  }
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) { node.className = className; }
+    if (text !== undefined && text !== null) { node.textContent = String(text); }
+    return node;
+  }
+
+  function metricCard(label, value, unit) {
+    var card = el("div", "card");
+    card.appendChild(el("h2", null, label));
+    var big = el("div", "metric", value);
+    if (unit) { big.appendChild(el("small", null, unit)); }
+    card.appendChild(big);
+    return card;
+  }
+
+  function panelCard(title, rows) {
+    var card = el("div", "card");
+    card.appendChild(el("h2", null, title));
+    rows.forEach(function (row) {
+      var line = el("div", "kv");
+      line.appendChild(el("span", null, row[0]));
+      line.appendChild(el("span", null, row[1]));
+      card.appendChild(line);
+    });
+    return card;
+  }
+
+  function featurePill(label, enabled) {
+    var pill = el("span", "pill " + (enabled ? "on" : "off"), label + (enabled ? " ✓" : " ✕"));
+    return pill;
+  }
+
+  function render(data) {
+    var stats = data.stats || {};
+    document.getElementById("metrics").hidden = false;
+    document.getElementById("panels").hidden = false;
+    document.getElementById("skeleton").hidden = true;
+
+    var status = document.getElementById("status");
+    var statusText = document.getElementById("status-text");
+    if (data.healthy) {
+      status.className = "badge ok";
+      statusText.textContent = t("views.overview.status_ok", "运行正常");
+    } else {
+      status.className = "badge warn";
+      statusText.textContent = t("views.overview.status_degraded", "轮询未运行");
+    }
+
+    var metrics = document.getElementById("metrics");
+    metrics.textContent = "";
+    metrics.appendChild(metricCard(t("views.overview.uptime", "运行时长"), fmtDuration(data.uptime_seconds)));
+    metrics.appendChild(metricCard(t("views.overview.subscriptions", "订阅数"), data.subscriptions || 0,
+      t("views.overview.items", "条")));
+    metrics.appendChild(metricCard(t("views.overview.sessions", "会话数"), data.sessions || 0));
+    metrics.appendChild(metricCard(t("views.overview.requests", "HTTP 请求"), stats.http_requests || 0,
+      t("views.overview.requests_failed", "失败 {n} 次", { n: stats.http_failures || 0 })));
+    metrics.appendChild(metricCard(t("views.overview.dynamic_pushes", "动态推送"), stats.dynamic_pushes || 0,
+      t("views.overview.items", "条")));
+    metrics.appendChild(metricCard(t("views.overview.live_pushes", "直播推送"), stats.live_pushes || 0,
+      t("views.overview.times", "次")));
+
+    var features = data.features || {};
+    var poll = data.poll || {};
+    var panels = document.getElementById("panels");
+    panels.textContent = "";
+
+    var featureCard = el("div", "card");
+    featureCard.appendChild(el("h2", null, t("views.overview.features", "功能开关")));
+    [
+      [t("views.overview.feature_parse", "链接解析"), features.parse],
+      [t("views.overview.feature_video_info", "视频信息回复"), features.video_info],
+      [t("views.overview.feature_download", "下载发送"), features.download],
+      [t("views.overview.feature_llm_tool", "LLM 工具"), features.llm_tool]
+    ].forEach(function (item) {
+      var line = el("div", "kv");
+      line.appendChild(el("span", null, item[0]));
+      var holder = el("span");
+      holder.appendChild(featurePill(item[1] ? "ON" : "OFF", !!item[1]));
+      line.appendChild(holder);
+      featureCard.appendChild(line);
+    });
+    panels.appendChild(featureCard);
+
+    panels.appendChild(panelCard(t("views.overview.poll", "轮询策略"), [
+      [t("views.overview.poll_interval", "轮询周期"), (poll.interval_seconds || 0) + t("views.overview.seconds", "秒")],
+      [t("views.overview.poll_concurrency", "UID 并发"), poll.concurrency || 0],
+      [t("views.overview.poll_dynamic_limit", "单轮推送上限"), poll.dynamic_limit || 0],
+      [t("views.overview.poll_throttle", "请求节流"), (poll.min_request_interval_seconds || 0) + t("views.overview.seconds", "秒")]
+    ]));
+
+    panels.appendChild(panelCard(t("views.overview.cookie", "登录态"), [
+      [t("views.overview.cookie", "登录态"),
+        data.cookie_configured ? (data.cookie_masked || "***") : t("views.overview.cookie_none", "未配置（匿名模式）")],
+      [t("views.overview.downloads", "视频下载"),
+        (stats.downloads || 0) + " / " + fmtBytes(stats.download_bytes || 0)],
+      [t("views.overview.send_failures", "发送失败"), stats.send_failures || 0],
+      [t("views.overview.poll_cycles", "轮询轮次"), stats.poll_cycles || 0],
+      [t("views.overview.data_version", "数据版本"), data.schema_version || 1]
+    ]));
+
+    document.getElementById("footer").textContent =
+      (data.display_name || data.plugin || "") + " · v" + (data.version || "");
+  }
+
+  function showError(message) {
+    var box = document.getElementById("error");
+    box.hidden = false;
+    box.textContent = t("views.overview.error", "状态获取失败：{message}", { message: message });
+    document.getElementById("skeleton").hidden = true;
+    var status = document.getElementById("status");
+    status.className = "badge err";
+    document.getElementById("status-text").textContent = t("views.overview.status_unknown", "状态未知");
+  }
+
+  async function load() {
+    if (!bridge) {
+      showError(t("views.overview.bridge_missing", "未能连接 AstrBot 面板桥接接口。"));
+      return;
+    }
+    var context = await bridge.ready();
+    var pluginName = (context && context.pluginName) || "astrbot_plugin_bili_all_function";
+    var endpoints = [pluginName + "/status", "status"];
+    var lastError = null;
+    for (var i = 0; i < endpoints.length; i += 1) {
+      try {
+        var payload = await bridge.apiGet(endpoints[i]);
+        var data = payload && payload.data ? payload.data : payload;
+        if (data && typeof data === "object") {
+          state.data = data;
+          document.getElementById("error").hidden = true;
+          render(data);
+          return;
+        }
+        lastError = new Error("empty payload");
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    showError((lastError && lastError.message) || "unknown error");
+  }
+
+  function setAutoRefresh(enabled) {
+    if (state.timer) { clearInterval(state.timer); state.timer = null; }
+    if (enabled) { state.timer = setInterval(load, 30000); }
+  }
+
+  document.getElementById("refresh").addEventListener("click", load);
+  document.getElementById("auto").addEventListener("change", function (event) {
+    setAutoRefresh(event.target.checked);
+  });
+
+  if (bridge) {
+    bridge.onContext(function (context) {
+      if (context && context.pageTitle) {
+        document.getElementById("title").textContent = context.pageTitle;
+      }
+    });
+    bridge.ready().then(function (context) {
+      if (context && context.locale) { document.documentElement.lang = context.locale; }
+      document.getElementById("title").textContent =
+        t("views.overview.title", "B站插件概览");
+      document.getElementById("subtitle").textContent =
+        t("views.overview.subtitle", "运行状态、订阅规模与功能开关一览");
+      document.getElementById("refresh").textContent = t("views.overview.refresh", "刷新");
+      document.getElementById("auto-label").textContent = t("views.overview.auto_refresh", "自动刷新（30s）");
+    });
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

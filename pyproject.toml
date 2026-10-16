@@ -1,0 +1,88 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "-q",
+    "--strict-markers",
+    "--cov",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-fail-under=95",
+]
+filterwarnings = [
+    "error::DeprecationWarning:main",
+    "error::DeprecationWarning:bili_logic",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["."]
+omit = [
+    "tests/*",
+    "scripts/*",
+    ".venv/*",
+    "setup.py",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 95
+exclude_also = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "@overload",
+    "raise NotImplementedError",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [".venv", "data", "downloads"]
+
+[tool.ruff.lint]
+# 生产级规则集：错误/告警 + 导入排序 + 现代化 + bugbear + 简化 + 异步 + 兜底异常 + 性能
+select = [
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "W",     # pycodestyle warnings
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+    "RUF",   # ruff 自有规则
+    "PIE",   # flake8-pie
+    "RET",   # flake8-return
+    "BLE",   # flake8-blind-except
+    "ASYNC", # flake8-async
+]
+ignore = [
+    "E501",     # 行长由 formatter 决定（中文注释普遍偏长）
+    "RUF001",   # 允许中文全角标点出现在字符串中
+    "RUF002",   # 允许中文全角标点出现在 docstring 中
+    "RUF003",   # 允许中文全角标点出现在注释中
+    "ASYNC240", # 仅对本地临时文件做微秒级 pathlib 操作，无需卸载到线程池
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["RUF012"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["main.py", "bili_constants.py", "bili_helpers.py", "bili_logic.py", "bili_models.py"]
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_equality = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "conftest"]
+ignore_errors = true

@@ -1,0 +1,58 @@
+{
+  "metadata": {
+    "display_name": "B站全能助手",
+    "short_desc": "B站链接解析 · UP主动态订阅 · 直播推送",
+    "desc": "解析 B站视频链接（BV/av/b23/QQ小程序卡片）并回复视频信息，可选下载视频发送；订阅 UP 主动态与直播开播推送，支持类型过滤与正则过滤。"
+  },
+  "commands": {
+    "bili_sub": "订阅 UP 主动态，可附加类型/正则过滤",
+    "bili_sub_del": "取消指定 UID 的订阅",
+    "bili_sub_list": "查看当前会话的订阅列表",
+    "bili_sub_test": "测试动态抓取与过滤效果（不写入订阅）",
+    "bili_state": "插件状态自检（配置、Cookie、订阅、运行统计）",
+    "bili_global_sub": "管理员：为指定会话添加订阅",
+    "bili_global_del": "管理员：删除指定会话的订阅",
+    "bili_global_list": "管理员：查看全部会话订阅"
+  },
+  "views": {
+    "overview": {
+      "title": "B站插件概览",
+      "subtitle": "运行状态、订阅规模与功能开关一览",
+      "loading": "正在加载运行状态…",
+      "refresh": "刷新",
+      "auto_refresh": "自动刷新（30s）",
+      "status_ok": "运行正常",
+      "status_degraded": "轮询未运行",
+      "status_unknown": "状态未知",
+      "uptime": "运行时长",
+      "sessions": "会话数",
+      "subscriptions": "订阅数",
+      "requests": "HTTP 请求",
+      "requests_failed": "失败 {n} 次",
+      "requests_silent": "静默降级 {n} 次",
+      "dynamic_pushes": "动态推送",
+      "live_pushes": "直播推送",
+      "downloads": "视频下载",
+      "send_failures": "发送失败",
+      "poll_cycles": "轮询轮次",
+      "features": "功能开关",
+      "feature_parse": "链接解析",
+      "feature_video_info": "视频信息回复",
+      "feature_download": "下载发送",
+      "feature_llm_tool": "LLM 工具",
+      "poll": "轮询策略",
+      "poll_interval": "轮询周期",
+      "poll_concurrency": "UID 并发",
+      "poll_dynamic_limit": "单轮推送上限",
+      "poll_throttle": "请求节流",
+      "cookie": "登录态",
+      "cookie_none": "未配置（匿名模式）",
+      "data_version": "数据版本",
+      "seconds": "秒",
+      "items": "条",
+      "times": "次",
+      "error": "状态获取失败：{message}",
+      "bridge_missing": "未能连接 AstrBot 面板桥接接口，请从面板的插件页面打开本页。"
+    }
+  }
+}

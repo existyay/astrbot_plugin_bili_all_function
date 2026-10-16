@@ -1,0 +1,1524 @@
+{
+ "code": 0,
+ "message": "0",
+ "data": {
+  "has_more": true,
+  "offset": "1255576041938747409",
+  "items": [
+   {
+    "id_str": "1253728007744389129",
+    "type": "DYNAMIC_TYPE_DRAW",
+    "visible": true,
+    "basic": {
+     "rid_str": "410778638",
+     "rtype": 2
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1790744699,
+       "pub_text": "09月30日",
+       "is_top": true,
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "欢迎参加A-SOUL六周年【我们的时间胶囊】主题照片征集\n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n🔴征集内容🔴\n这是我们的纪念日，我们有一起做的事，一起完成的成就，一起放声大笑 ，一起默默擦眼泪，一起回味又回味的每个瞬间。也会有不在彼此身边时，一起数着日子盼重逢，一起在各自的生活里努力，一起把思念攒成见面时的雀跃，一起相信时空、距离从不是问题。\n请把这些拍成照片传给我们（照片不用必须包含三人形象），只要是「因为是A-SOUL才能做得到」「因为A-SOUL才想做的事」都可以！\n比如：\n・去线下支持啦！\n・在游戏里面拿了MVP！\n・获得了技能证书！\n・去挑战了极限运动！\n・去打卡了景点！\n・煮出美味的食物！\n・养的小宠物长大了！\n・记录了美丽的天空！\n・去学习了唱歌、跳舞！\n・认识了新朋友！\n等等等...期待看到大家的投稿！人、风景、物品、动物等等都可以！\n⚠️需要注意\n拍摄的时候，注意人身安全\n拍摄内容不能违反公序良俗\n如果画面里出现他人形象，请征得他人同意\n请精选1-2张来投稿噢~投稿很多并不会提高采用率\n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n🔴征集时间🔴\n现在～ 2026/12/5 12:00 \n请投稿至：https://6lqyy.fanqier.cn/f/hyt9bywa \n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n◯投稿规则\n请保持拍摄的纵向分辨率在1080px以上\n请注意照片上不要有APP的水印\n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n精选之后的投稿，会在周年纪念直播中展示\n没有被采纳的投稿也非常感谢大家参加\n就用这个当借口，拉着朋友一起出去玩吧！",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "欢迎参加A-SOUL六周年【我们的时间胶囊】主题照片征集\n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n🔴征集内容🔴\n这是我们的纪念日，我们有一起做的事，一起完成的成就，一起放声大笑 ，一起默默擦眼泪，一起回味又回味的每个瞬间。也会有不在彼此身边时，一起数着日子盼重逢，一起在各自的生活里努力，一起把思念攒成见面时的雀跃，一起相信时空、距离从不是问题。\n请把这些拍成照片传给我们（照片不用必须包含三人形象），只要是「因为是A-SOUL才能做得到」「因为A-SOUL才想做的事」都可以！\n比如：\n・去线下支持啦！\n・在游戏里面拿了MVP！\n・获得了技能证书！\n・去挑战了极限运动！\n・去打卡了景点！\n・煮出美味的食物！\n・养的小宠物长大了！\n・记录了美丽的天空！\n・去学习了唱歌、跳舞！\n・认识了新朋友！\n等等等...期待看到大家的投稿！人、风景、物品、动物等等都可以！\n⚠️需要注意\n拍摄的时候，注意人身安全\n拍摄内容不能违反公序良俗\n如果画面里出现他人形象，请征得他人同意\n请精选1-2张来投稿噢~投稿很多并不会提高采用率\n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n🔴征集时间🔴\n现在～ 2026/12/5 12:00 \n请投稿至：",
+         "orig_text": "欢迎参加A-SOUL六周年【我们的时间胶囊】主题照片征集\n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n🔴征集内容🔴\n这是我们的纪念日，我们有一起做的事，一起完成的成就，一起放声大笑 ，一起默默擦眼泪，一起回味又回味的每个瞬间。也会有不在彼此身边时，一起数着日子盼重逢，一起在各自的生活里努力，一起把思念攒成见面时的雀跃，一起相信时空、距离从不是问题。\n请把这些拍成照片传给我们（照片不用必须包含三人形象），只要是「因为是A-SOUL才能做得到」「因为A-SOUL才想做的事」都可以！\n比如：\n・去线下支持啦！\n・在游戏里面拿了MVP！\n・获得了技能证书！\n・去挑战了极限运动！\n・去打卡了景点！\n・煮出美味的食物！\n・养的小宠物长大了！\n・记录了美丽的天空！\n・去学习了唱歌、跳舞！\n・认识了新朋友！\n等等等...期待看到大家的投稿！人、风景、物品、动物等等都可以！\n⚠️需要注意\n拍摄的时候，注意人身安全\n拍摄内容不能违反公序良俗\n如果画面里出现他人形象，请征得他人同意\n请精选1-2张来投稿噢~投稿很多并不会提高采用率\n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n🔴征集时间🔴\n现在～ 2026/12/5 12:00 \n请投稿至："
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "https://6lqyy.fanqier.cn/f/hyt9bywa",
+         "orig_text": "https://6lqyy.fanqier.cn/f/hyt9bywa"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": " \n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n◯投稿规则\n请保持拍摄的纵向分辨率在1080px以上\n请注意照片上不要有APP的水印\n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n精选之后的投稿，会在周年纪念直播中展示\n没有被采纳的投稿也非常感谢大家参加\n就用这个当借口，拉着朋友一起出去玩吧！",
+         "orig_text": " \n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n◯投稿规则\n请保持拍摄的纵向分辨率在1080px以上\n请注意照片上不要有APP的水印\n・・ ・ー・・ ーーー ・・・ー ・ ー・ーー ーーー ・・ー\n精选之后的投稿，会在周年纪念直播中展示\n没有被采纳的投稿也非常感谢大家参加\n就用这个当借口，拉着朋友一起出去玩吧！"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "410778638",
+        "comment_type": 11,
+        "count": 143,
+        "type": 2
+       },
+       "like": {
+        "count": 1507,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 28,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1259699575671750656",
+    "type": "DYNAMIC_TYPE_DRAW",
+    "visible": true,
+    "basic": {
+     "rid_str": "412384248",
+     "rtype": 2
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1792135063,
+       "pub_text": "2小时前",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "时间流转，与你的心意依旧在舞台灯光亮起的此刻共鸣💓 \n本次【A-SOUL此间共鸣演唱会】流程安排及场贩情报公开，请小伙伴们仔细阅读！\n10月24日-10月25日，和小伙伴们不见不散~ \n",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "时间流转，与你的心意依旧在舞台灯光亮起的此刻共鸣💓 \n本次【A-SOUL此间共鸣演唱会】流程安排及场贩情报公开，请小伙伴们仔细阅读！\n10月24日-10月25日，和小伙伴们不见不散~ \n",
+         "orig_text": "时间流转，与你的心意依旧在舞台灯光亮起的此刻共鸣💓 \n本次【A-SOUL此间共鸣演唱会】流程安排及场贩情报公开，请小伙伴们仔细阅读！\n10月24日-10月25日，和小伙伴们不见不散~ \n"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_DRAW",
+       "dyn_draw": {
+        "items": [
+         {
+          "src": "http://i0.hdslb.com/bfs/new_dyn/7f904fec1fdea4826afa43cec63a02eb703007996.jpg",
+          "width": 1080,
+          "height": 7028
+         },
+         {
+          "src": "http://i0.hdslb.com/bfs/new_dyn/ba2ebec6cf0fc7a82cbe49a375b61838703007996.jpg",
+          "width": 1080,
+          "height": 10550
+         },
+         {
+          "src": "http://i0.hdslb.com/bfs/new_dyn/5697ad21e40749e390789bb859405cd1703007996.jpg",
+          "width": 1080,
+          "height": 10433
+         }
+        ]
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "412384248",
+        "comment_type": 11,
+        "count": 222,
+        "type": 2
+       },
+       "like": {
+        "count": 795,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 7,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1259646803390758934",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1259646803390758934",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1792122776,
+       "pub_text": "5小时前",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "[2026贝拉的冒险_比心]真心驱散乌云后，就能看到舞台中心闪耀的贝拉~",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_EMOJI",
+         "text": "[2026贝拉的冒险_比心]",
+         "orig_text": "[2026贝拉的冒险_比心]"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "真心驱散乌云后，就能看到舞台中心闪耀的贝拉~",
+         "orig_text": "真心驱散乌云后，就能看到舞台中心闪耀的贝拉~"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1259644763297021968",
+         "type": "DYNAMIC_TYPE_AV",
+         "visible": true,
+         "basic": {
+          "rid_str": "1106729021",
+          "rtype": 8
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1792122301,
+            "pub_text": "",
+            "user": {
+             "name": "贝拉kira",
+             "mid": 672353429,
+             "face": "https://i2.hdslb.com/bfs/face/3ccbfd77f000cf3154762b78694724cd9e6719e5.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_ARCHIVE",
+            "dyn_archive": {
+             "aid": "1106729021",
+             "bvid": "BV1Hw4m1r7dp",
+             "cover": "http://i1.hdslb.com/bfs/archive/82980976327e0ffb24f338252fce29c901b9f6fe.jpg",
+             "desc": "新单曲将在10.24-10.25的A-SOUL 此间共鸣线下演出中首次表演\n和贝拉一起迎接雨季后的星光吧~\n\n——————————\n歌曲：《雨季后的星光》\n演唱：贝拉Bella",
+             "duration_text": "00:43",
+             "title": "遥远闪烁的，是《雨季后的星光》| 贝拉个人单曲试听",
+             "stat": {
+              "play": "1.3万",
+              "danmaku": "136",
+              "like": "4125"
+             },
+             "badge": {
+              "bg_color": "var(--brand_pink, #FF6699",
+              "color": "var(--bg1, #FFFFFF)",
+              "text": "投稿视频"
+             }
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1259646803390758934",
+        "comment_type": 17,
+        "count": 10,
+        "type": 2
+       },
+       "like": {
+        "count": 667,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 0,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1259377427316998165",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1259377427316998165",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1792060057,
+       "pub_text": "昨天 18:27",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "今天19:30，是在@乃琳Queen 的直播间哦~→ https://live.bilibili.com/22625027\n今天21:00，是在@贝拉kira 的直播间哦~→https://live.bilibili.com/22632424",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "今天19:30，是在",
+         "orig_text": "今天19:30，是在"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@乃琳Queen",
+         "orig_text": "@乃琳Queen",
+         "rid": "672342685"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": " 的直播间哦~→ ",
+         "orig_text": " 的直播间哦~→ "
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_WEB",
+         "text": "网页链接",
+         "orig_text": "https://live.bilibili.com/22625027",
+         "jump_url": "https://live.bilibili.com/22625027"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "\n今天21:00，是在",
+         "orig_text": "\n今天21:00，是在"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@贝拉kira",
+         "orig_text": "@贝拉kira",
+         "rid": "672353429"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": " 的直播间哦~→",
+         "orig_text": " 的直播间哦~→"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_WEB",
+         "text": "网页链接",
+         "orig_text": "https://live.bilibili.com/22632424",
+         "jump_url": "https://live.bilibili.com/22632424"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1258164285871226881",
+         "type": "DYNAMIC_TYPE_DRAW",
+         "visible": true,
+         "basic": {
+          "rid_str": "412015973",
+          "rtype": 2
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1791777600,
+            "pub_text": "",
+            "user": {
+             "name": "A-SOUL_Official",
+             "mid": 703007996,
+             "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DESC",
+           "module_desc": {
+            "text": "Hello小伙伴们大家好~10.12-10.18的日程表来咯！ \n\n10月16日的【乃琳&嘉然双播】是在@乃琳Queen 的直播间哦！\n10月17日的【A-SOUL游戏室】是在@嘉然今天吃什么 的直播间哦！",
+            "rich_text_nodes": [
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "Hello小伙伴们大家好~10.12-10.18的日程表来咯！ \n\n10月16日的【乃琳&嘉然双播】是在",
+              "orig_text": "Hello小伙伴们大家好~10.12-10.18的日程表来咯！ \n\n10月16日的【乃琳&嘉然双播】是在"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_AT",
+              "text": "@乃琳Queen",
+              "orig_text": "@乃琳Queen",
+              "rid": "672342685"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": " 的直播间哦！\n10月17日的【A-SOUL游戏室】是在",
+              "orig_text": " 的直播间哦！\n10月17日的【A-SOUL游戏室】是在"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_AT",
+              "text": "@嘉然今天吃什么",
+              "orig_text": "@嘉然今天吃什么",
+              "rid": "672328094"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": " 的直播间哦！",
+              "orig_text": " 的直播间哦！"
+             }
+            ]
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_DRAW",
+            "dyn_draw": {
+             "items": [
+              {
+               "src": "http://i0.hdslb.com/bfs/new_dyn/34ddb74a676aecdc70540d9066cc7f89703007996.jpg",
+               "width": 3000,
+               "height": 2000
+              }
+             ]
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1259377427316998165",
+        "comment_type": 17,
+        "count": 16,
+        "type": 2
+       },
+       "like": {
+        "count": 387,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 1,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1259277513530540056",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1259277513530540056",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1792036794,
+       "pub_text": "昨天 11:59",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "[2026乃琳的酒馆_享受]和小琳一起睡个回笼觉吧！",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_EMOJI",
+         "text": "[2026乃琳的酒馆_享受]",
+         "orig_text": "[2026乃琳的酒馆_享受]"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "和小琳一起睡个回笼觉吧！",
+         "orig_text": "和小琳一起睡个回笼觉吧！"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1259274966586621986",
+         "type": "DYNAMIC_TYPE_AV",
+         "visible": true,
+         "basic": {
+          "rid_str": "117438800728548",
+          "rtype": 8
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1792036201,
+            "pub_text": "",
+            "user": {
+             "name": "乃琳Queen",
+             "mid": 672342685,
+             "face": "https://i1.hdslb.com/bfs/face/d7dac0d2c7a42b1ef9b018c2186092f5cd650a97.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_ARCHIVE",
+            "dyn_archive": {
+             "aid": "117438800728548",
+             "bvid": "BV1MKp26NEAk",
+             "cover": "http://i0.hdslb.com/bfs/archive/18c027c56a536ca728c1ad22f02c9e14dfcb0601.jpg",
+             "desc": "新单曲将在10.24-10.25的A-SOUL 此间共鸣线下演出中首次表演\n和乃琳一起窝在被子里伸个懒腰不起床~\n\n——————————\n歌曲：《困就不起来》\n演唱：乃琳Eileen",
+             "duration_text": "00:46",
+             "title": "被窝里我就是最自由的，《困就不起来》| 乃琳个人单曲试听",
+             "stat": {
+              "play": "3.6万",
+              "danmaku": "230",
+              "like": "8086"
+             },
+             "badge": {
+              "bg_color": "var(--brand_pink, #FF6699",
+              "color": "var(--bg1, #FFFFFF)",
+              "text": "投稿视频"
+             }
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1259277513530540056",
+        "comment_type": 17,
+        "count": 42,
+        "type": 2
+       },
+       "like": {
+        "count": 829,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 2,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1259006715813167106",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1259006715813167106",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791973744,
+       "pub_text": "2天前",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "今天21:00，是在@嘉然今天吃什么 的直播间哦~→  https://live.bilibili.com/22637261",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "今天21:00，是在",
+         "orig_text": "今天21:00，是在"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@嘉然今天吃什么",
+         "orig_text": "@嘉然今天吃什么",
+         "rid": "672328094"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": " 的直播间哦~→  ",
+         "orig_text": " 的直播间哦~→  "
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_WEB",
+         "text": "网页链接",
+         "orig_text": "https://live.bilibili.com/22637261",
+         "jump_url": "https://live.bilibili.com/22637261"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1258164285871226881",
+         "type": "DYNAMIC_TYPE_DRAW",
+         "visible": true,
+         "basic": {
+          "rid_str": "412015973",
+          "rtype": 2
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1791777600,
+            "pub_text": "",
+            "user": {
+             "name": "A-SOUL_Official",
+             "mid": 703007996,
+             "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DESC",
+           "module_desc": {
+            "text": "Hello小伙伴们大家好~10.12-10.18的日程表来咯！ \n\n10月16日的【乃琳&嘉然双播】是在@乃琳Queen 的直播间哦！\n10月17日的【A-SOUL游戏室】是在@嘉然今天吃什么 的直播间哦！",
+            "rich_text_nodes": [
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "Hello小伙伴们大家好~10.12-10.18的日程表来咯！ \n\n10月16日的【乃琳&嘉然双播】是在",
+              "orig_text": "Hello小伙伴们大家好~10.12-10.18的日程表来咯！ \n\n10月16日的【乃琳&嘉然双播】是在"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_AT",
+              "text": "@乃琳Queen",
+              "orig_text": "@乃琳Queen",
+              "rid": "672342685"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": " 的直播间哦！\n10月17日的【A-SOUL游戏室】是在",
+              "orig_text": " 的直播间哦！\n10月17日的【A-SOUL游戏室】是在"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_AT",
+              "text": "@嘉然今天吃什么",
+              "orig_text": "@嘉然今天吃什么",
+              "rid": "672328094"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": " 的直播间哦！",
+              "orig_text": " 的直播间哦！"
+             }
+            ]
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_DRAW",
+            "dyn_draw": {
+             "items": [
+              {
+               "src": "http://i0.hdslb.com/bfs/new_dyn/34ddb74a676aecdc70540d9066cc7f89703007996.jpg",
+               "width": 3000,
+               "height": 2000
+              }
+             ]
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1259006715813167106",
+        "comment_type": 17,
+        "count": 8,
+        "type": 2
+       },
+       "like": {
+        "count": 447,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 0,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1258552364096290825",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1258552364096290825",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791867957,
+       "pub_text": "3天前",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "【贝拉2026生日会】已全部发放完毕，可自行查询单号或进行售后反馈，感谢支持",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "【贝拉2026生日会】已全部发放完毕，可自行查询单号或进行售后反馈，感谢支持",
+         "orig_text": "【贝拉2026生日会】已全部发放完毕，可自行查询单号或进行售后反馈，感谢支持"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1246767523595026450",
+         "type": "DYNAMIC_TYPE_DRAW",
+         "visible": true,
+         "basic": {
+          "rid_str": "408801140",
+          "rtype": 2
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1789124085,
+            "pub_text": "",
+            "user": {
+             "name": "A-SOUL_Official",
+             "mid": 703007996,
+             "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DESC",
+           "module_desc": {
+            "text": "📢小伙伴们大家好！\n      现在开始处理【贝拉2026生日会】地址修改/地址补登记问题，请有需要的小伙伴通过链接进行信息填写，无修改地址需求的小伙伴请勿提交表单。\n此表单仅针对【贝拉2026生日会】的修改，修改期限自即刻起至9月26日23:59，逾期将不再进行处理（请勿重复提交表单），麻烦小伙伴们积极奔走相告哟！贝拉生日会特殊舰长礼的制作已接近尾声，在修改地址结束后将于9月底至10月初陆续发货～再次提醒各位，填写地址务必精确至省-市-区-详细地址，仅填写XX学院，XX小区，XX路无法进行发货。\n表单→https://6lqyy.fanqier.cn/f/vygfgoez",
+            "rich_text_nodes": [
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "📢小伙伴们大家好！\n      现在开始处理【贝拉2026生日会】地址修改/地址补登记问题，请有需要的小伙伴通过链接进行信息填写，无修改地址需求的小伙伴请勿提交表单。\n此表单仅针对【贝拉2026生日会】的修改，修改期限自即刻起至9月26日23:59，逾期将不再进行处理（请勿重复提交表单），麻烦小伙伴们积极奔走相告哟！贝拉生日会特殊舰长礼的制作已接近尾声，在修改地址结束后将于9月底至10月初陆续发货～再次提醒各位，填写地址务必精确至省-市-区-详细地址，仅填写XX学院，XX小区，XX路无法进行发货。\n表单→",
+              "orig_text": "📢小伙伴们大家好！\n      现在开始处理【贝拉2026生日会】地址修改/地址补登记问题，请有需要的小伙伴通过链接进行信息填写，无修改地址需求的小伙伴请勿提交表单。\n此表单仅针对【贝拉2026生日会】的修改，修改期限自即刻起至9月26日23:59，逾期将不再进行处理（请勿重复提交表单），麻烦小伙伴们积极奔走相告哟！贝拉生日会特殊舰长礼的制作已接近尾声，在修改地址结束后将于9月底至10月初陆续发货～再次提醒各位，填写地址务必精确至省-市-区-详细地址，仅填写XX学院，XX小区，XX路无法进行发货。\n表单→"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "https://6lqyy.fanqier.cn/f/vygfgoez",
+              "orig_text": "https://6lqyy.fanqier.cn/f/vygfgoez"
+             }
+            ]
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1258552364096290825",
+        "comment_type": 17,
+        "count": 80,
+        "type": 2
+       },
+       "like": {
+        "count": 648,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 0,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1258164285871226881",
+    "type": "DYNAMIC_TYPE_DRAW",
+    "visible": true,
+    "basic": {
+     "rid_str": "412015973",
+     "rtype": 2
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791777600,
+       "pub_text": "10月12日",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "Hello小伙伴们大家好~10.12-10.18的日程表来咯！ \n\n10月16日的【乃琳&嘉然双播】是在@乃琳Queen 的直播间哦！\n10月17日的【A-SOUL游戏室】是在@嘉然今天吃什么 的直播间哦！",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "Hello小伙伴们大家好~10.12-10.18的日程表来咯！ \n\n10月16日的【乃琳&嘉然双播】是在",
+         "orig_text": "Hello小伙伴们大家好~10.12-10.18的日程表来咯！ \n\n10月16日的【乃琳&嘉然双播】是在"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@乃琳Queen",
+         "orig_text": "@乃琳Queen",
+         "rid": "672342685"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": " 的直播间哦！\n10月17日的【A-SOUL游戏室】是在",
+         "orig_text": " 的直播间哦！\n10月17日的【A-SOUL游戏室】是在"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@嘉然今天吃什么",
+         "orig_text": "@嘉然今天吃什么",
+         "rid": "672328094"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": " 的直播间哦！",
+         "orig_text": " 的直播间哦！"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_DRAW",
+       "dyn_draw": {
+        "items": [
+         {
+          "src": "http://i0.hdslb.com/bfs/new_dyn/34ddb74a676aecdc70540d9066cc7f89703007996.jpg",
+          "width": 3000,
+          "height": 2000
+         }
+        ]
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "412015973",
+        "comment_type": 11,
+        "count": 164,
+        "type": 2
+       },
+       "like": {
+        "count": 756,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 9,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1257521666465988617",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1257521666465988617",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791627979,
+       "pub_text": "10月10日",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "今天20:00【A-SOUL团综】，是在@贝拉kira 的直播间哦~→ https://live.bilibili.com/22632424",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "今天20:00【A-SOUL团综】，是在",
+         "orig_text": "今天20:00【A-SOUL团综】，是在"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@贝拉kira",
+         "orig_text": "@贝拉kira",
+         "rid": "672353429"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": " 的直播间哦~→ ",
+         "orig_text": " 的直播间哦~→ "
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_WEB",
+         "text": "网页链接",
+         "orig_text": "https://live.bilibili.com/22632424",
+         "jump_url": "https://live.bilibili.com/22632424"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1255576041938747409",
+         "type": "DYNAMIC_TYPE_DRAW",
+         "visible": true,
+         "basic": {
+          "rid_str": "411339099",
+          "rtype": 2
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1791174978,
+            "pub_text": "",
+            "user": {
+             "name": "A-SOUL_Official",
+             "mid": 703007996,
+             "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DESC",
+           "module_desc": {
+            "text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在@贝拉kira    的直播间哦！",
+            "rich_text_nodes": [
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在",
+              "orig_text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_AT",
+              "text": "@贝拉kira ",
+              "orig_text": "@贝拉kira ",
+              "rid": "672353429"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "   的直播间哦！",
+              "orig_text": "   的直播间哦！"
+             }
+            ]
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_DRAW",
+            "dyn_draw": {
+             "items": [
+              {
+               "src": "http://i0.hdslb.com/bfs/new_dyn/405de6b2ab45e659070acb3b8a038492703007996.jpg",
+               "width": 3000,
+               "height": 2000
+              }
+             ]
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1257521666465988617",
+        "comment_type": 17,
+        "count": 110,
+        "type": 2
+       },
+       "like": {
+        "count": 540,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 0,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1256777120992985109",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1256777120992985109",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791454626,
+       "pub_text": "10月08日",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "今天19:30，是在@乃琳Queen 的直播间哦~→ https://live.bilibili.com/22625027\n今天21:00，是在@贝拉kira 的直播间哦~→https://live.bilibili.com/22632424",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "今天19:30，是在",
+         "orig_text": "今天19:30，是在"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@乃琳Queen",
+         "orig_text": "@乃琳Queen",
+         "rid": "672342685"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": " 的直播间哦~→ ",
+         "orig_text": " 的直播间哦~→ "
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_WEB",
+         "text": "网页链接",
+         "orig_text": "https://live.bilibili.com/22625027",
+         "jump_url": "https://live.bilibili.com/22625027"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "\n今天21:00，是在",
+         "orig_text": "\n今天21:00，是在"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@贝拉kira",
+         "orig_text": "@贝拉kira",
+         "rid": "672353429"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": " 的直播间哦~→",
+         "orig_text": " 的直播间哦~→"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_WEB",
+         "text": "网页链接",
+         "orig_text": "https://live.bilibili.com/22632424",
+         "jump_url": "https://live.bilibili.com/22632424"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1255576041938747409",
+         "type": "DYNAMIC_TYPE_DRAW",
+         "visible": true,
+         "basic": {
+          "rid_str": "411339099",
+          "rtype": 2
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1791174978,
+            "pub_text": "",
+            "user": {
+             "name": "A-SOUL_Official",
+             "mid": 703007996,
+             "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DESC",
+           "module_desc": {
+            "text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在@贝拉kira    的直播间哦！",
+            "rich_text_nodes": [
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在",
+              "orig_text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_AT",
+              "text": "@贝拉kira ",
+              "orig_text": "@贝拉kira ",
+              "rid": "672353429"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "   的直播间哦！",
+              "orig_text": "   的直播间哦！"
+             }
+            ]
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_DRAW",
+            "dyn_draw": {
+             "items": [
+              {
+               "src": "http://i0.hdslb.com/bfs/new_dyn/405de6b2ab45e659070acb3b8a038492703007996.jpg",
+               "width": 3000,
+               "height": 2000
+              }
+             ]
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1256777120992985109",
+        "comment_type": 17,
+        "count": 21,
+        "type": 2
+       },
+       "like": {
+        "count": 455,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 0,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1256715814635044870",
+    "type": "DYNAMIC_TYPE_DRAW",
+    "visible": true,
+    "basic": {
+     "rid_str": "411659412",
+     "rtype": 2
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791440352,
+       "pub_text": "10月08日",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "📢小伙伴们大家好！\n      现在开始处理【乃琳2026生日会】地址修改/地址补登记问题，请有需要的小伙伴通过链接进行信息填写，无修改地址需求的小伙伴请勿提交表单。\n此表单仅针对【乃琳2026生日会】的修改，修改期限自即刻起至10月25日23:59，逾期将不再进行处理（请勿重复提交表单），麻烦小伙伴们积极奔走相告哟！乃琳生日会特殊舰长礼的制作已接近尾声，在修改地址结束后将于10月底至11月初陆续发货～再次提醒各位，填写地址务必精确至省-市-区-详细地址，仅填写XX学院，XX小区，XX路无法进行发货。\n表单→ https://6lqyy.fanqier.cn/f/hbm0w4hp",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "📢小伙伴们大家好！\n      现在开始处理【乃琳2026生日会】地址修改/地址补登记问题，请有需要的小伙伴通过链接进行信息填写，无修改地址需求的小伙伴请勿提交表单。\n此表单仅针对【乃琳2026生日会】的修改，修改期限自即刻起至10月25日23:59，逾期将不再进行处理（请勿重复提交表单），麻烦小伙伴们积极奔走相告哟！乃琳生日会特殊舰长礼的制作已接近尾声，在修改地址结束后将于10月底至11月初陆续发货～再次提醒各位，填写地址务必精确至省-市-区-详细地址，仅填写XX学院，XX小区，XX路无法进行发货。\n表单→ ",
+         "orig_text": "📢小伙伴们大家好！\n      现在开始处理【乃琳2026生日会】地址修改/地址补登记问题，请有需要的小伙伴通过链接进行信息填写，无修改地址需求的小伙伴请勿提交表单。\n此表单仅针对【乃琳2026生日会】的修改，修改期限自即刻起至10月25日23:59，逾期将不再进行处理（请勿重复提交表单），麻烦小伙伴们积极奔走相告哟！乃琳生日会特殊舰长礼的制作已接近尾声，在修改地址结束后将于10月底至11月初陆续发货～再次提醒各位，填写地址务必精确至省-市-区-详细地址，仅填写XX学院，XX小区，XX路无法进行发货。\n表单→ "
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "https://6lqyy.fanqier.cn/f/hbm0w4hp",
+         "orig_text": "https://6lqyy.fanqier.cn/f/hbm0w4hp"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "411659412",
+        "comment_type": 11,
+        "count": 70,
+        "type": 2
+       },
+       "like": {
+        "count": 623,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 2,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1256401959883112471",
+    "type": "DYNAMIC_TYPE_FORWARD",
+    "visible": true,
+    "basic": {
+     "rid_str": "1256401959883112471",
+     "rtype": 1
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791367277,
+       "pub_text": "10月07日",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "今天21:00，是在@嘉然今天吃什么 的直播间哦~→  https://live.bilibili.com/22637261",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "今天21:00，是在",
+         "orig_text": "今天21:00，是在"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@嘉然今天吃什么 ",
+         "orig_text": "@嘉然今天吃什么 ",
+         "rid": "672328094"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "的直播间哦~→  ",
+         "orig_text": "的直播间哦~→  "
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_WEB",
+         "text": "网页链接",
+         "orig_text": "https://live.bilibili.com/22637261",
+         "jump_url": "https://live.bilibili.com/22637261"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_FORWARD",
+       "dyn_forward": {
+        "type": null,
+        "item": {
+         "id_str": "1255576041938747409",
+         "type": "DYNAMIC_TYPE_DRAW",
+         "visible": true,
+         "basic": {
+          "rid_str": "411339099",
+          "rtype": 2
+         },
+         "modules": [
+          {
+           "module_type": "MODULE_TYPE_AUTHOR",
+           "module_author": {
+            "pub_ts": 1791174978,
+            "pub_text": "",
+            "user": {
+             "name": "A-SOUL_Official",
+             "mid": 703007996,
+             "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+            }
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DESC",
+           "module_desc": {
+            "text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在@贝拉kira    的直播间哦！",
+            "rich_text_nodes": [
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在",
+              "orig_text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_AT",
+              "text": "@贝拉kira ",
+              "orig_text": "@贝拉kira ",
+              "rid": "672353429"
+             },
+             {
+              "type": "RICH_TEXT_NODE_TYPE_TEXT",
+              "text": "   的直播间哦！",
+              "orig_text": "   的直播间哦！"
+             }
+            ]
+           }
+          },
+          {
+           "module_type": "MODULE_TYPE_DYNAMIC",
+           "module_dynamic": {
+            "type": "MDL_DYN_TYPE_DRAW",
+            "dyn_draw": {
+             "items": [
+              {
+               "src": "http://i0.hdslb.com/bfs/new_dyn/405de6b2ab45e659070acb3b8a038492703007996.jpg",
+               "width": 3000,
+               "height": 2000
+              }
+             ]
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "1256401959883112471",
+        "comment_type": 17,
+        "count": 17,
+        "type": 2
+       },
+       "like": {
+        "count": 504,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 1,
+        "type": 1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id_str": "1255576041938747409",
+    "type": "DYNAMIC_TYPE_DRAW",
+    "visible": true,
+    "basic": {
+     "rid_str": "411339099",
+     "rtype": 2
+    },
+    "modules": [
+     {
+      "module_type": "MODULE_TYPE_AUTHOR",
+      "module_author": {
+       "pub_ts": 1791174978,
+       "pub_text": "10月05日",
+       "user": {
+        "name": "A-SOUL_Official",
+        "mid": 703007996,
+        "face": "https://i2.hdslb.com/bfs/face/3f758e887211df06b3d1f2c8d68e6997d76f6128.jpg"
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DESC",
+      "module_desc": {
+       "text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在@贝拉kira    的直播间哦！",
+       "rich_text_nodes": [
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在",
+         "orig_text": "Hello小伙伴们大家好~10.5-10.11的日程表来咯！ \n\n10月10日的【A-SOUL团综】是在"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_AT",
+         "text": "@贝拉kira ",
+         "orig_text": "@贝拉kira ",
+         "rid": "672353429"
+        },
+        {
+         "type": "RICH_TEXT_NODE_TYPE_TEXT",
+         "text": "   的直播间哦！",
+         "orig_text": "   的直播间哦！"
+        }
+       ]
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_DYNAMIC",
+      "module_dynamic": {
+       "type": "MDL_DYN_TYPE_DRAW",
+       "dyn_draw": {
+        "items": [
+         {
+          "src": "http://i0.hdslb.com/bfs/new_dyn/405de6b2ab45e659070acb3b8a038492703007996.jpg",
+          "width": 3000,
+          "height": 2000
+         }
+        ]
+       }
+      }
+     },
+     {
+      "module_type": "MODULE_TYPE_STAT",
+      "module_stat": {
+       "comment": {
+        "comment_id": "411339099",
+        "comment_type": 11,
+        "count": 592,
+        "type": 2
+       },
+       "like": {
+        "count": 926,
+        "like_state": false,
+        "type": 3
+       },
+       "forward": {
+        "count": 7,
+        "type": 1
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "_fixture": {
+  "uid": 703007996,
+  "attempts": 2
+ }
+}

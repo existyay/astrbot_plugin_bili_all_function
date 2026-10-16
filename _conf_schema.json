@@ -8,6 +8,18 @@
         "type": "bool",
         "hint": "统一解析普通文本与QQ小程序JSON中的 BV/av/b23/video 链接。",
         "default": true
+      },
+      "send_video_info": {
+        "description": "解析后回复视频信息",
+        "type": "bool",
+        "hint": "命中B站链接时回复标题 / UP主 / 播放量 / 点赞 / 时长 / 链接。",
+        "default": true
+      },
+      "enable_llm_tool": {
+        "description": "启用 LLM 函数工具",
+        "type": "bool",
+        "hint": "注册 bili_video_info 工具，允许大模型在对话中直接查询B站视频信息。",
+        "default": true
       }
     }
   },
@@ -18,7 +30,7 @@
       "poll_interval_seconds": {
         "description": "轮询周期(秒)",
         "type": "int",
-        "hint": "Round-robin 模式下每轮仅检测 1 个 UID；单 UID 实际检测周期≈轮询周期×订阅UID总数。",
+        "hint": "每一轮检测所有订阅 UID 的间隔；建议 >= 60 秒以降低风控风险。",
         "default": 300,
         "min": 10,
         "max": 86400
@@ -34,7 +46,7 @@
       "http_retry_count": {
         "description": "请求重试次数",
         "type": "int",
-        "hint": "网络请求失败时的轻量重试次数（不含首次请求）。",
+        "hint": "解析链接、下载等请求失败时的轻量重试次数（不含首次请求）；轮询请求固定不重试。",
         "default": 2,
         "min": 0,
         "max": 6
@@ -50,15 +62,23 @@
       "dynamic_limit": {
         "description": "单轮最多推送动态数",
         "type": "int",
-        "hint": "每个订阅目标每轮最多推送多少条未读动态。",
+        "hint": "每个订阅目标每轮最多推送多少条未读动态；始终优先推送最新的一条。",
         "default": 3,
         "min": 1,
         "max": 20
       },
+      "uid_concurrency": {
+        "description": "UID 并发数",
+        "type": "int",
+        "hint": "同一轮中并发检测的 UID 数量，越大越及时但越容易触发风控。",
+        "default": 3,
+        "min": 1,
+        "max": 16
+      },
       "uid_task_gap_seconds": {
         "description": "UID任务间隔(秒)",
         "type": "int",
-        "hint": "同一轮内任务间隔；round-robin 每轮仅1个 UID 时通常可设为 0。",
+        "hint": "每个 UID 检测完成后的等待时间，填 0 表示不等待。",
         "default": 1,
         "min": 0,
         "max": 30
@@ -70,6 +90,30 @@
         "default": 20,
         "min": 5,
         "max": 200
+      },
+      "empty_retry_count": {
+        "description": "空响应重试次数",
+        "type": "int",
+        "hint": "B站动态接口会偶发返回 code=0 但列表为空（实测成功率约 6~7 成），重试可避免漏推最新动态；建议保持大于 0。",
+        "default": 3,
+        "min": 0,
+        "max": 6
+      },
+      "empty_retry_delay_seconds": {
+        "description": "空响应重试基础间隔(秒)",
+        "type": "float",
+        "hint": "空响应重试前的等待时间，实际等待为 基础间隔 × 重试轮次。",
+        "default": 1.0,
+        "min": 0,
+        "max": 10
+      },
+      "min_request_interval_seconds": {
+        "description": "请求节流间隔(秒)",
+        "type": "float",
+        "hint": "两次外部请求之间的最小间隔，用于降低触发 B站风控的概率；填 0 表示不节流。",
+        "default": 0.2,
+        "min": 0,
+        "max": 5
       }
     }
   },
@@ -123,6 +167,9 @@
         "description": "B站Cookie(高画质可选)",
         "type": "text",
         "hint": "可填写浏览器中B站登录态Cookie（建议至少包含SESSDATA）以解锁更高画质下载。",
+        "obvious_hint": true,
+        "editor_mode": true,
+        "full_width": true,
         "default": ""
       }
     }
@@ -134,7 +181,7 @@
       "admin_ids": {
         "description": "管理员ID列表",
         "type": "text",
-        "hint": "用于全局订阅管理指令。支持逗号、空格或换行分隔。示例: 123456,789012",
+        "hint": "用于全局订阅管理指令。支持逗号、空格或换行分隔，也可直接使用 AstrBot 原生管理员身份。示例: 123456,789012",
         "default": ""
       }
     }

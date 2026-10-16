@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Release gate (lint / types / compliance / metadata / view)
+        run: python scripts/check_release.py --fast
+
+      - name: Tests with coverage gate
+        run: pytest
+
+      - name: Verify tag matches metadata version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          python - <<'PY'
+          import os, pathlib, sys, yaml
+          metadata = yaml.safe_load(pathlib.Path("metadata.yaml").read_text(encoding="utf-8"))
+          tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          version = str(metadata["version"]).lstrip("v")
+          if tag != version:
+              sys.exit(f"标签 {os.environ['GITHUB_REF_NAME']} 与 metadata.yaml 的 v{version} 不一致")
+          print(f"版本一致：v{version}")
+          PY
+
+      - name: Build plugin archive
+        run: |
+          mkdir -p dist
+          zip -r "dist/astrbot_plugin_bili_all_function-${GITHUB_REF_NAME:-manual}.zip" \
+            main.py bili_constants.py bili_helpers.py bili_logic.py bili_models.py \
+            metadata.yaml logo.png _conf_schema.json requirements.txt \
+            README.md CHANGELOG.md LICENSE SECURITY.md \
+            views .astrbot-plugin
+          ls -l dist
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
+          body_path: CHANGELOG.md

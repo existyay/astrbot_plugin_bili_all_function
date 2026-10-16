@@ -1,0 +1,255 @@
+{
+ "code": 0,
+ "message": "OK",
+ "ttl": 1,
+ "data": {
+  "bvid": "BV1zKJQ6fEaY",
+  "aid": 117448716196765,
+  "videos": 1,
+  "tid": 27,
+  "tid_v2": 2033,
+  "tname": "",
+  "tname_v2": "",
+  "copyright": 3,
+  "pic": "http://i2.hdslb.com/bfs/archive/89e7766fd8eead99644f019f409153e378029cbd.jpg",
+  "title": "闪身步实用教程",
+  "pubdate": 1792134000,
+  "ctime": 1792125611,
+  "desc": "上次教完了，这次该实践了，大家学会了没有？\n\n——————————\n出演：嘉然、贝拉\n闪身步教程：BV1dFad6aEZe",
+  "desc_v2": [
+   {
+    "raw_text": "上次教完了，这次该实践了，大家学会了没有？\n\n——————————\n出演：嘉然、贝拉\n闪身步教程：BV1dFad6aEZe",
+    "type": 1,
+    "biz_id": 0
+   }
+  ],
+  "state": 0,
+  "duration": 29,
+  "rights": {
+   "bp": 0,
+   "elec": 0,
+   "download": 1,
+   "movie": 0,
+   "pay": 0,
+   "hd5": 0,
+   "no_reprint": 0,
+   "autoplay": 1,
+   "ugc_pay": 0,
+   "is_cooperation": 1,
+   "ugc_pay_preview": 0,
+   "no_background": 0,
+   "clean_mode": 0,
+   "is_stein_gate": 0,
+   "is_360": 0,
+   "no_share": 0,
+   "arc_pay": 0,
+   "free_watch": 0
+  },
+  "owner": {
+   "mid": 672328094,
+   "name": "嘉然今天吃什么",
+   "face": "https://i2.hdslb.com/bfs/face/9ea3dfdcf336f9dee7f763d9f9b0a0b427bb0fa9.jpg"
+  },
+  "stat": {
+   "aid": 117448716196765,
+   "view": 25272,
+   "danmaku": 231,
+   "reply": 554,
+   "favorite": 785,
+   "coin": 2534,
+   "share": 252,
+   "now_rank": 0,
+   "his_rank": 0,
+   "like": 5334,
+   "dislike": 0,
+   "evaluation": "",
+   "vt": 0
+  },
+  "argue_info": {
+   "argue_msg": "",
+   "argue_type": 0,
+   "argue_link": ""
+  },
+  "dynamic": "",
+  "cid": 42783608031,
+  "dimension": {
+   "width": 1080,
+   "height": 1920,
+   "rotate": 0
+  },
+  "premiere": null,
+  "teenage_mode": 1,
+  "is_chargeable_season": false,
+  "is_story": true,
+  "is_upower_exclusive": false,
+  "is_upower_play": false,
+  "is_upower_preview": false,
+  "enable_vt": 0,
+  "vt_display": "",
+  "is_upower_exclusive_with_qa": false,
+  "is_hua_sheng": false,
+  "no_cache": false,
+  "pages": [
+   {
+    "cid": 42783608031,
+    "page": 1,
+    "from": "vupload",
+    "part": "闪身步实用教程",
+    "duration": 29,
+    "vid": "",
+    "weblink": "",
+    "dimension": {
+     "width": 1080,
+     "height": 1920,
+     "rotate": 0
+    },
+    "first_frame": "http://i0.hdslb.com/bfs/storyff/_00003r0grtmxv8fqw2gg5h0p3fg7i1b_firsti.jpg",
+    "ctime": 1792125611
+   }
+  ],
+  "subtitle": {
+   "allow_submit": false,
+   "list": []
+  },
+  "staff": [
+   {
+    "mid": 672328094,
+    "title": "UP主",
+    "name": "嘉然今天吃什么",
+    "face": "https://i2.hdslb.com/bfs/face/9ea3dfdcf336f9dee7f763d9f9b0a0b427bb0fa9.jpg",
+    "vip": {
+     "type": 2,
+     "status": 1,
+     "due_date": 1867507200000,
+     "vip_pay_type": 0,
+     "theme_type": 0,
+     "label": {
+      "path": "http://i0.hdslb.com/bfs/vip/label_annual.png",
+      "text": "年度大会员",
+      "label_theme": "annual_vip",
+      "text_color": "#FFFFFF",
+      "bg_style": 1,
+      "bg_color": "#FB7299",
+      "border_color": "",
+      "use_img_label": true,
+      "img_label_uri_hans": "https://i0.hdslb.com/bfs/activity-plat/static/20220608/e369244d0b14644f5e1a06431e22a4d5/0DFy9BHgwE.gif",
+      "img_label_uri_hant": "",
+      "img_label_uri_hans_static": "https://i0.hdslb.com/bfs/vip/8d7e624d13d3e134251e4174a7318c19a8edbd71.png",
+      "img_label_uri_hant_static": "https://i0.hdslb.com/bfs/activity-plat/static/20220614/e369244d0b14644f5e1a06431e22a4d5/uckjAv3Npy.png",
+      "label_id": -22,
+      "label_goto": {
+       "mobile": "https://big.bilibili.com/mobile/index?navhide=1&from_spmid=vipicon",
+       "pc_web": "https://account.bilibili.com/big?from_spmid=vipicon"
+      },
+      "img_label_uri_i18n": "",
+      "img_label_uri_i18n_static": "",
+      "label_type": 2
+     },
+     "avatar_subscript": 1,
+     "nickname_color": "#FB7299",
+     "role": 3,
+     "avatar_subscript_url": "",
+     "tv_vip_status": 1,
+     "tv_vip_pay_type": 0,
+     "tv_due_date": 1822406400,
+     "avatar_icon": {
+      "icon_type": 1,
+      "icon_resource": {}
+     },
+     "ott_info": {
+      "vip_type": 1,
+      "pay_type": 0,
+      "pay_channel_id": "",
+      "status": 1,
+      "overdue_time": 1822406400
+     },
+     "super_vip": {
+      "is_super_vip": true
+     }
+    },
+    "official": {
+     "role": 2,
+     "title": "2025直播年度最强舰队奖UP主、2022百大UP主、虚拟偶像团体A-SOUL所属艺人",
+     "desc": "",
+     "type": 0
+    },
+    "follower": 1871466,
+    "label_style": 0
+   },
+   {
+    "mid": 672353429,
+    "title": "参演",
+    "name": "贝拉kira",
+    "face": "https://i2.hdslb.com/bfs/face/3ccbfd77f000cf3154762b78694724cd9e6719e5.jpg",
+    "vip": {
+     "type": 2,
+     "status": 1,
+     "due_date": 1836316800000,
+     "vip_pay_type": 0,
+     "theme_type": 0,
+     "label": {
+      "path": "http://i0.hdslb.com/bfs/vip/label_annual.png",
+      "text": "年度大会员",
+      "label_theme": "annual_vip",
+      "text_color": "#FFFFFF",
+      "bg_style": 1,
+      "bg_color": "#FB7299",
+      "border_color": "",
+      "use_img_label": true,
+      "img_label_uri_hans": "https://i0.hdslb.com/bfs/activity-plat/static/20220608/e369244d0b14644f5e1a06431e22a4d5/0DFy9BHgwE.gif",
+      "img_label_uri_hant": "",
+      "img_label_uri_hans_static": "https://i0.hdslb.com/bfs/vip/8d7e624d13d3e134251e4174a7318c19a8edbd71.png",
+      "img_label_uri_hant_static": "https://i0.hdslb.com/bfs/activity-plat/static/20220614/e369244d0b14644f5e1a06431e22a4d5/uckjAv3Npy.png",
+      "label_id": -22,
+      "label_goto": {
+       "mobile": "https://big.bilibili.com/mobile/index?navhide=1&from_spmid=vipicon",
+       "pc_web": "https://account.bilibili.com/big?from_spmid=vipicon"
+      },
+      "img_label_uri_i18n": "",
+      "img_label_uri_i18n_static": "",
+      "label_type": 2
+     },
+     "avatar_subscript": 1,
+     "nickname_color": "#FB7299",
+     "role": 3,
+     "avatar_subscript_url": "",
+     "tv_vip_status": 1,
+     "tv_vip_pay_type": 0,
+     "tv_due_date": 1822406400,
+     "avatar_icon": {
+      "icon_type": 1,
+      "icon_resource": {}
+     },
+     "ott_info": {
+      "vip_type": 1,
+      "pay_type": 0,
+      "pay_channel_id": "",
+      "status": 1,
+      "overdue_time": 1822406400
+     },
+     "super_vip": {
+      "is_super_vip": true
+     }
+    },
+    "official": {
+     "role": 2,
+     "title": "虚拟偶像团体A-SOUL 所属艺人",
+     "desc": "",
+     "type": 0
+    },
+    "follower": 742053,
+    "label_style": 0
+   }
+  ],
+  "is_season_display": false,
+  "user_garb": {
+   "url_image_ani_cut": ""
+  },
+  "honor_reply": {},
+  "like_icon": "",
+  "need_jump_bv": false,
+  "disable_show_up_info": false,
+  "is_story_play": 1,
+  "is_view_self": false
+ }
+}
