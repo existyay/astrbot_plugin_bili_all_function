@@ -329,7 +329,8 @@ class TestReleaseAssets:
             assert re.match(r"^[A-Za-z0-9_.\-\[\]]+\s*[<>=!~]", line), line
 
     def test_pyproject_declares_coverage_gate(self):
-        import tomllib
+        # tomllib 自 Python 3.11 起进入标准库；3.10 上跳过该断言（CI 已覆盖 3.12）
+        tomllib = pytest.importorskip("tomllib")
 
         with (ROOT / "pyproject.toml").open("rb") as fp:
             data = tomllib.load(fp)
