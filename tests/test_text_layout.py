@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import json
+from pathlib import Path
 
 from conftest import chain_text, count_images
 
@@ -494,7 +496,10 @@ class TestPerTypeLayout:
         text = chain_text(chain)
         assert "原动态数据：播放 8" in text
         assert "原视频：https://www.bilibili.com/video/BV1orig" in text
-        assert "原文：https://t.bilibili.com/99" in text
+        # 转发动态最多两行链接：内容链接（原视频）+ 本动态永久链接
+        assert "动态：https://t.bilibili.com/13" in text
+        assert "原文：https://t.bilibili.com/99" not in text
+        assert len([line for line in text.split("\n") if line.startswith(("原视频：", "原文：", "动态："))]) == 2
 
     def test_forward_without_original(self):
         chain = L.build_dynamic_chain(dyn(id_str="14", type_="DYNAMIC_TYPE_FORWARD", desc="纯转发"))
@@ -568,3 +573,120 @@ class TestVideoAndLiveLayout:
     def test_live_chain_starting_info_without_title(self):
         chain = L.build_live_chain({"uname": "UP", "room_id": 6}, now_live=True, wrap_width=40)
         assert chain_text(chain) == "[B站直播] UP 开播了\n直播：https://live.bilibili.com/6"
+
+
+# ───────────────────────── 链接去重与数量上限 ─────────────────────────
+
+
+class TestLinkKey:
+    def test_same_content_different_links_share_a_key(self):
+        assert H.link_key("https://t.bilibili.com/1259644763297021968") == H.link_key(
+            "https://www.bilibili.com/opus/1259644763297021968",
+        )
+        assert H.link_key("https://www.bilibili.com/video/BV1Hw4m1r7dp?spm_id_from=333.999") == H.link_key(
+            "https://www.bilibili.com/video/BV1Hw4m1r7dp/",
+        )
+
+    def test_id_kinds_are_distinguished(self):
+        cases = {
+            "https://www.bilibili.com/video/BV1Hw4m1r7dp": "bv:1hw4m1r7dp",
+            "https://www.bilibili.com/video/av123": "av:123",
+            "https://t.bilibili.com/456": "dyn:456",
+            "https://www.bilibili.com/read/cv789": "cv:789",
+            "https://live.bilibili.com/22637261": "live:22637261",
+            "https://www.bilibili.com/audio/au321": "au:321",
+            "https://www.bilibili.com/bangumi/play/ep111": "bangumi:111",
+            "https://www.bilibili.com/cheese/play/ss222": "cheese:222",
+            "https://space.bilibili.com/946974/channel/collectiondetail?sid=333": "ml:333",
+            "https://www.bilibili.com/medialist/detail/ml444": "ml:444",
+            "https://space.bilibili.com/946974": "space:946974",
+        }
+        for url, expected in cases.items():
+            assert H.link_key(url) == expected, url
+
+    def test_unknown_host_falls_back_to_normalised_url(self):
+        assert H.link_key("HTTPS://Example.COM/a/b/?x=1#frag") == "https://example.com/a/b"
+        assert H.link_key("not-a-url") == "not-a-url"
+        assert H.link_key("") == ""
+        assert H.link_key(None) == ""
+
+
+class TestLinkBlockHasNoDuplicates:
+    def test_link_block_dedupes_same_content_and_caps_lines(self):
+        # 视频链接来自 bvid、卡片 jump_url（带查询参数）与 opus 形式，三者应合并为一行
+        item = dyn(
+            id_str="21",
+            type_="DYNAMIC_TYPE_AV",
+            major={
+                "archive": {
+                    "bvid": "BV1aaaabbbb1",
+                    "jump_url": "https://www.bilibili.com/video/BV1aaaabbbb1?spm_id_from=333.999",
+                }
+            },
+        )
+        lines = L._dynamic_link_lines(item)
+        assert lines == [
+            "视频：https://www.bilibili.com/video/BV1aaaabbbb1",
+            "动态：https://t.bilibili.com/21",
+        ]
+
+    def test_dynamic_permalink_dedupes_opus_card_url(self):
+        item = dyn(
+            id_str="22", type_="DYNAMIC_TYPE_DRAW", major={"opus": {"jump_url": "https://www.bilibili.com/opus/22"}}
+        )
+        lines = L._dynamic_link_lines(item)
+        assert lines == ["图文：https://www.bilibili.com/opus/22"]
+
+    def test_more_specific_label_wins_for_same_content(self):
+        item = dyn(
+            id_str="23",
+            type_="DYNAMIC_TYPE_AV",
+            major={"archive": {"bvid": "BV1ccccdddd1", "jump_url": "https://www.bilibili.com/video/BV1ccccdddd1"}},
+        )
+        lines = L._dynamic_link_lines(item)
+        assert lines[0].startswith("视频：")
+
+    def test_room_link_is_kept_for_live_cards(self):
+        item = dyn(id_str="24", type_="DYNAMIC_TYPE_LIVE", major={"live_play_info": {"room_id": 777, "title": "开播"}})
+        assert L._dynamic_link_lines(item) == [
+            "直播：https://live.bilibili.com/777",
+            "动态：https://t.bilibili.com/24",
+        ]
+
+    def test_non_http_urls_are_ignored(self):
+        item = dyn(id_str="25", major={"article": {"jump_url": "javascript:alert(1)"}})
+        assert L._dynamic_link_lines(item) == ["动态：https://t.bilibili.com/25"]
+
+    def test_link_already_shown_in_body_is_not_repeated(self):
+        item = dyn(
+            id_str="26",
+            type_="DYNAMIC_TYPE_LIVE",
+            desc="今天19:30，是在直播间哦~→ https://live.bilibili.com/777\n10月16日团综",
+            major={"live_play_info": {"room_id": 777, "title": "开播"}},
+        )
+        assert L._dynamic_link_lines(item) == ["动态：https://t.bilibili.com/26"]
+
+    def test_body_url_stops_before_cjk_text(self):
+        assert C.RE_URL_IN_TEXT.findall("来这儿看 https://www.bilibili.com/video/BV1aaaabbbb1 一起玩") == [
+            "https://www.bilibili.com/video/BV1aaaabbbb1"
+        ]
+        item = dyn(id_str="27", desc="主页 https://space.bilibili.com/946974、欢迎关注")
+        assert L._dynamic_link_lines(item) == ["动态：https://t.bilibili.com/27"]
+
+    def test_every_fixture_dynamic_has_at_most_two_unique_links(self):
+        fixture_dir = Path(__file__).resolve().parent / "fixtures"
+        checked = 0
+        for path in sorted(fixture_dir.glob("dynamic_feed_*.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            for raw in (payload.get("data") or {}).get("items") or []:
+                item = copy.deepcopy(raw)
+                H.normalize_modules(item)
+                lines = L._dynamic_link_lines(item)
+                checked += 1
+                assert len(lines) <= C.MAX_PUSH_LINKS, (path.name, lines)
+                keys = [H.link_key(line.split("：", 1)[1]) for line in lines]
+                assert len(set(keys)) == len(keys), (path.name, lines)
+                for line in lines:
+                    label, url = line.split("：", 1)
+                    assert label and H.is_http_url(url) and not C.RE_EMOJI.search(line), line
+        assert checked > 30

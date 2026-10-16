@@ -22,6 +22,7 @@ try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
         DYNAMIC_TOP_TAG,
         DYNAMIC_TYPE_LABELS,
         FAST_KEYWORDS,
+        LINK_KEY_PATTERNS,
         MAX_FILTER_REGEX_COUNT,
         MAX_FILTER_REGEX_LEN,
         MAX_UID,
@@ -45,6 +46,7 @@ except ImportError:  # pragma: no cover
         DYNAMIC_TOP_TAG,
         DYNAMIC_TYPE_LABELS,
         FAST_KEYWORDS,
+        LINK_KEY_PATTERNS,
         MAX_FILTER_REGEX_COUNT,
         MAX_FILTER_REGEX_LEN,
         MAX_UID,
@@ -103,6 +105,26 @@ def first_http_url(obj: Any, *keys: str) -> str:
 
 def is_http_url(value: Any) -> bool:
     return isinstance(value, str) and value.startswith(_HTTP_PREFIXES)
+
+
+def link_key(url: Any) -> str:
+    """链接的内容指纹：指向同一内容的不同链接返回同一个 key。
+
+    这样 ``t.bilibili.com/<动态ID>`` 与 ``www.bilibili.com/opus/<动态ID>``、
+    带 ``?spm_id_from=...`` 查询参数的视频链接、合集 ``sid`` 等都不会被当成两条链接。
+    识别不出内容 ID 时退化为「协议 + 域名 + 路径」（忽略查询串与末尾斜杠）。
+    """
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    for pattern, prefix in LINK_KEY_PATTERNS:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return f"{prefix}:{match.group(1).lower()}"
+    parsed = urlparse(text)
+    if not parsed.netloc:
+        return text
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{parsed.path.rstrip('/')}"
 
 
 # ───────────────────────── 链接与 ID 提取 ─────────────────────────

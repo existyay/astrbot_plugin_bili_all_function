@@ -8,7 +8,7 @@
 ![astrbot](https://img.shields.io/badge/AstrBot-%3E%3D4.18-ff69b4)
 ![ruff](https://img.shields.io/badge/lint-ruff-261230)
 ![mypy](https://img.shields.io/badge/types-mypy-blue)
-![tests](https://img.shields.io/badge/tests-676%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-687%20passed-brightgreen)
 
 一个聚焦 **B站（bilibili）** 的 AstrBot 插件：链接解析 + UP主动态订阅 + 直播推送。
 
@@ -32,7 +32,7 @@
 - **插件页面**：Dashboard 内嵌 `views/overview` 视图，可视化查看运行状态、订阅量与请求统计。
 - **可观测性**：`/bili_state` 一键自检，并输出请求、推送、下载等运行统计；内置健康快照 API。
 - **安全加固**：Cookie 出网域名白名单 + 全链路脱敏 + 输入长度/正则护栏（见 [SECURITY.md](./SECURITY.md)）。
-- **完整测试**：676 个离线用例，语句覆盖率 100%、整体覆盖率约 99.97%，并带 AstrBot 合规自检。
+- **完整测试**：687 个离线用例，语句覆盖率 100%、整体覆盖率约 99.97%，并带 AstrBot 合规自检。
 
 ## 兼容性
 
@@ -213,8 +213,8 @@
 
 | 检查 | 命令 | 现状 |
 | --- | --- | --- |
-| 单元测试 + 覆盖率门禁（≥95%） | `pytest` | 676 passed，99.97% |
-| 最低支持版本兼容性 | `pytest tests --ignore=tests/test_compliance.py`（对 AstrBot 4.18） | 641 passed |
+| 单元测试 + 覆盖率门禁（≥95%） | `pytest` | 687 passed，99.97% |
+| 最低支持版本兼容性 | `pytest tests --ignore=tests/test_compliance.py`（对 AstrBot 4.18） | 652 passed |
 | 静态检查（ruff，生产级规则集） | `ruff check .` | 通过 |
 | 代码风格 | `ruff format --check .` | 通过 |
 | 类型检查（mypy） | `mypy` | 通过（5 个源码模块，零错误） |
@@ -273,9 +273,8 @@
 和贝拉一起迎接雨季后的星光吧~
 原动态数据：播放 1.3万 | 弹幕 136 | 时长 00:43
 <封面图>
-动态：https://t.bilibili.com/1259646803390758934
 原视频：https://www.bilibili.com/video/BV1Hw4m1r7dp
-原文：https://t.bilibili.com/1259644763297021968
+动态：https://t.bilibili.com/1259646803390758934
 ```
 
 专栏 / 直播推荐类卡片（标题 + 摘要 + 统计 + 对应链接）：
@@ -297,8 +296,17 @@
 ```
 
 排版顺序固定为 **头部 → 正文（含卡片标题/简介与统计、转发的原文摘要）→ 图片 → 链接**，
-既保证正文不会被多图挤出屏幕，也保证最新动态永远出现在推送批次中；
-链接统一带中文标签（`视频：` / `动态：` / `直播：` / `专栏：` / `原文：`），不使用 emoji 前缀。
+既保证正文不会被多图挤出屏幕，也保证最新动态永远出现在推送批次中。
+
+链接块规则：
+
+- 标签统一为中文（`视频：` / `直播：` / `专栏：` / `合集：` / `动态：` / `原视频：` / `原文：`），
+  不使用 emoji 前缀；
+- **按内容去重**：同一内容的 `t.bilibili.com/<动态ID>` 与 `opus/<动态ID>`、
+  带 `?spm_id_from=…` 的同一视频链接、合集 `sid` 等只会保留一条；
+- **不重复正文里的链接**：正文（含转发的原文）已经出现过的链接不会再在链接块里列一遍；
+- **单条推送最多 2 行链接**，内容链接（视频/专栏/直播…）优先，其次才是「动态 / 原文」这类跳转页，
+  因此不会出现一条动态刷出三四行链接的情况。
 
 ## 实现要点
 

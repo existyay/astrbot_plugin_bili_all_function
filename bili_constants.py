@@ -97,6 +97,32 @@ DYNAMIC_TEXT_WRAP_WIDTH = 60
 #: 自动换行列宽的允许上限（配置项校验用）。
 DYNAMIC_TEXT_WRAP_WIDTH_MAX = 200
 
+#: 正文里的 http(s) 链接（遇到空白、CJK 字符或全角标点即结束）。
+RE_URL_IN_TEXT = re.compile(r"https?://[^\s\u3000-\u303f\uff00-\uffef\u4e00-\u9fff]+")
+
+#: 单条推送最多输出的链接行数（内容链接优先，其余按标签优先级截断）。
+MAX_PUSH_LINKS = 2
+#: 链接内容指纹：把指向同一内容的不同链接形式归并成一个 key。
+#: 例：``https://www.bilibili.com/opus/123``、``https://t.bilibili.com/123``、
+#: ``https://www.bilibili.com/video/BVxxxx?spm_id_from=...`` 都归并到对应内容。
+LINK_KEY_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"BV([0-9A-Za-z]{10})", "bv"),
+    (r"/video/av(\d+)", "av"),
+    (r"t\.bilibili\.com/(\d+)", "dyn"),
+    (r"/opus/(\d+)", "dyn"),
+    (r"/read/cv(\d+)", "cv"),
+    (r"live\.bilibili\.com/(\d+)", "live"),
+    (r"/audio/au(\d+)", "au"),
+    (r"/bangumi/play/(?:ep|ss)(\d+)", "bangumi"),
+    (r"/cheese/play/(?:ep|ss)(\d+)", "cheese"),
+    (r"/medialist/detail/ml(\d+)", "ml"),
+    (r"[?&]sid=(\d+)", "ml"),
+    (r"space\.bilibili\.com/(\d+)", "space"),
+)
+#: 链接标签优先级（越小越优先保留）：内容类链接先于「本动态 / 原文」这类跳转页。
+LINK_LABEL_PRIORITY: dict[str, int] = {"动态": 1, "详情": 1, "原文": 2}
+DEFAULT_LINK_PRIORITY = 0
+
 DYNAMIC_TYPE_LABELS: dict[str, str] = {
     "DYNAMIC_TYPE_DRAW": "图文动态",
     "DYNAMIC_TYPE_WORD": "文字动态",

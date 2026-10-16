@@ -14,10 +14,14 @@ import astrbot.api.message_components as Comp
 
 try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
     from .bili_constants import (
+        DEFAULT_LINK_PRIORITY,
         DYNAMIC_DETAIL_URL,
         DYNAMIC_TEXT_LIMIT,
         DYNAMIC_TEXT_WRAP_WIDTH,
+        LINK_LABEL_PRIORITY,
         LIVE_ROOM_URL,
+        MAX_PUSH_LINKS,
+        RE_URL_IN_TEXT,
         VIDEO_DESC_LIMIT,
         VIDEO_DETAIL_URL,
     )
@@ -42,6 +46,7 @@ try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
         is_http_url,
         is_lottery_text,
         is_top_dynamic,
+        link_key,
         matches_any_pattern,
         resolve_video_page,
         text_value,
@@ -51,10 +56,14 @@ try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
     from .bili_models import Subscription
 except ImportError:  # pragma: no cover
     from bili_constants import (
+        DEFAULT_LINK_PRIORITY,
         DYNAMIC_DETAIL_URL,
         DYNAMIC_TEXT_LIMIT,
         DYNAMIC_TEXT_WRAP_WIDTH,
+        LINK_LABEL_PRIORITY,
         LIVE_ROOM_URL,
+        MAX_PUSH_LINKS,
+        RE_URL_IN_TEXT,
         VIDEO_DESC_LIMIT,
         VIDEO_DETAIL_URL,
     )
@@ -79,6 +88,7 @@ except ImportError:  # pragma: no cover
         is_http_url,
         is_lottery_text,
         is_top_dynamic,
+        link_key,
         matches_any_pattern,
         resolve_video_page,
         text_value,
@@ -183,23 +193,43 @@ def _dynamic_body_lines(item: dict[str, Any], wrap_width: int) -> list[str]:
     return [line for line in lines if line.strip()]
 
 
-def _dynamic_link_lines(item: dict[str, Any]) -> list[str]:
-    """链接块（带中文标签、无 emoji），按「视频 → 卡片 → 直播 → 动态 → 原文」排序。"""
-    entries: list[tuple[str, str]] = []
-    seen: set[str] = set()
+def _dynamic_link_lines(item: dict[str, Any], body_lines: list[str] | None = None) -> list[str]:
+    """链接块（带中文标签、无 emoji）。
+
+    规则：
+
+    * 按**内容指纹**（BV 号 / 动态 ID / 直播间号 / 专栏 ID …）去重：同一内容的
+      ``t.bilibili.com/<id>`` 与 ``opus/<id>``、带 ``?spm_id_from=`` 的同一视频链接
+      只会出现一次；
+    * **正文里已经出现过的链接不再重复列出**（例如日程表动态正文里就写了直播间地址）；
+    * **单条推送最多 ``MAX_PUSH_LINKS`` 行**，内容链接（视频/专栏/直播…）优先于
+      「动态 / 原文」这类跳转页，避免一条动态刷出三四行链接；
+    * 顺序固定为「视频 → 卡片内容 → 直播 → 本动态 → 原视频 → 原文」。
+    """
+    if body_lines is None:
+        body_lines = _dynamic_body_lines(item, 0)
+    shown_keys = {link_key(url) for line in body_lines for url in RE_URL_IN_TEXT.findall(line)}
+
+    entries: list[tuple[int, str, str]] = []
+    indexes: dict[str, int] = {}
 
     def add(label: str, url: Any) -> None:
         text = str(url or "").strip()
-        if is_http_url(text) and text not in seen:
-            seen.add(text)
-            entries.append((label, text))
+        if not is_http_url(text):
+            return
+        key = link_key(text)
+        if key in indexes or key in shown_keys:
+            # 同一内容只保留最先加入的那一条（加入顺序即「内容链接 → 本动态 → 原文」，
+            # 先加入的标签总是更具体，例如「视频」优于「详情」）
+            return
+        indexes[key] = len(entries)
+        entries.append((LINK_LABEL_PRIORITY.get(label, DEFAULT_LINK_PRIORITY), label, text))
 
     card = dynamic_card(item)
     bvid = str(dynamic_archive(item).get("bvid") or "").strip()
     if bvid:
         add("视频", VIDEO_DETAIL_URL.format(bvid=bvid))
-    if card["url"]:
-        add(card["kind"] or "详情", card["url"])
+    add(card["kind"] or "详情", card["url"])
     if card["room"]:
         add("直播", LIVE_ROOM_URL.format(room_id=card["room"]))
     dyn_id = dynamic_id(item)
@@ -212,12 +242,13 @@ def _dynamic_link_lines(item: dict[str, Any]) -> list[str]:
         orig_bvid = str(dynamic_archive(orig).get("bvid") or "").strip()
         if orig_bvid:
             add("原视频", VIDEO_DETAIL_URL.format(bvid=orig_bvid))
-        if orig_card["url"]:
-            add("原文", orig_card["url"])
+        add("原文", orig_card["url"])
         orig_id = dynamic_id(orig)
         if orig_id:
             add("原文", DYNAMIC_DETAIL_URL.format(dyn_id=orig_id))
-    return [f"{label}：{url}" for label, url in entries]
+
+    ordered = sorted(entries, key=lambda entry: entry[0])
+    return [f"{label}：{url}" for _priority, label, url in ordered[:MAX_PUSH_LINKS]]
 
 
 def build_dynamic_chain(
@@ -241,7 +272,7 @@ def build_dynamic_chain(
         except (TypeError, ValueError):  # pragma: no cover - 仅防御异常图片组件
             continue
 
-    links = _dynamic_link_lines(item)
+    links = _dynamic_link_lines(item, body_lines)
     if links:
         chain.append(Comp.Plain("\n".join(links)))
     return chain
