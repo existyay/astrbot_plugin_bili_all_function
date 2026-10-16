@@ -12,7 +12,7 @@ import re
 PLUGIN_NAME = "astrbot_plugin_bili_all_function"
 PLUGIN_AUTHOR = "existyay"
 PLUGIN_DISPLAY_NAME = "bili_all"
-PLUGIN_VERSION = "0.3.1"
+PLUGIN_VERSION = "0.4.0"
 PLUGIN_REPO = "https://github.com/existyay/astrbot_plugin_bili_all_function"
 PLUGIN_DESC = "B站链接解析 + UP主动态订阅 + 直播推送。"
 
@@ -92,6 +92,11 @@ VIDEO_DESC_LIMIT = 120
 #: 单条动态最多推送的图片数量。
 DYNAMIC_IMAGE_LIMIT = 9
 
+#: 动态正文自动换行的显示列宽（中文/全角字符按 2 列计），0 表示不换行。
+DYNAMIC_TEXT_WRAP_WIDTH = 60
+#: 自动换行列宽的允许上限（配置项校验用）。
+DYNAMIC_TEXT_WRAP_WIDTH_MAX = 200
+
 DYNAMIC_TYPE_LABELS: dict[str, str] = {
     "DYNAMIC_TYPE_DRAW": "图文动态",
     "DYNAMIC_TYPE_WORD": "文字动态",
@@ -99,8 +104,114 @@ DYNAMIC_TYPE_LABELS: dict[str, str] = {
     "DYNAMIC_TYPE_ARTICLE": "专栏文章",
     "DYNAMIC_TYPE_FORWARD": "转发动态",
     "DYNAMIC_TYPE_LIVE_RCMD": "直播推荐",
+    "DYNAMIC_TYPE_LIVE": "直播动态",
+    "DYNAMIC_TYPE_LOTTERY": "互动抽奖",
+    "DYNAMIC_TYPE_COMMON_SQUARE": "卡片动态",
+    "DYNAMIC_TYPE_MEDIALIST": "合集动态",
+    "DYNAMIC_TYPE_MUSIC": "音乐动态",
+    "DYNAMIC_TYPE_PGC": "番剧动态",
+    "DYNAMIC_TYPE_COURSES": "课程动态",
+    "DYNAMIC_TYPE_NONE": "动态",
 }
 DEFAULT_DYNAMIC_TYPE_LABEL = "动态"
+
+# ───────────────────────── 文本清洗（去 emoji） ─────────────────────────
+#: 真 emoji 字符范围（不含 ``→`` 这类普通排版符号，避免误删正文）。
+#: 组成：补充符号/表情/交通/扩展 A 区、麻将牌与扑克、杂项符号、装饰符号、
+#: 杂项符号与箭头（emoji 呈现部分）、时钟与沙漏、旗帜、变体选择符/零宽连接符/按键帽。
+RE_EMOJI = re.compile(
+    "["
+    "\U0001f000-\U0001faff"  # 麻将/多米诺/扑克/表情/交通/扩展 A
+    "\U00002600-\U000027bf"  # 杂项符号 + 装饰符号（U+2705/U+274C/U+26A0 等）
+    "\U00002b00-\U00002bff"  # 杂项符号与箭头（U+2B50/U+2B1B 等 emoji 呈现部分）
+    "\U00002300-\U000023ff"  # 时钟/沙漏/媒体控制
+    "\U0000203c\U00002049"  # U+203C / U+2049
+    "\U00003030\U0000303d\U00003297\U00003299"  # U+3030 / U+303D / U+3297 / U+3299
+    "\ufe0f\u200d\u20e3"  # 变体选择符 / 零宽连接符 / 按键帽
+    "]"
+)
+
+#: 零宽字符与 BOM（正文里只会干扰排版）。
+RE_ZERO_WIDTH = re.compile("[\u200b-\u200f\u2028\u2029\ufeff]")
+
+#: B站内置表情（``rich_text_nodes`` 里 type 为 EMOJI 的节点）在扁平文本中表现为
+#: ``[tv_微笑]`` / ``[2026嘉然的画册_糖糖回家]`` 这类中括号 token。
+#: 判定规则：``tv_`` 前缀、含下划线的多段名、或命中常见表情名白名单；
+#: ``[公告]``、``[A-SOUL]``、``[1_2]`` 这类正常文本保留。
+RE_BRACKET_TOKEN = re.compile(r"\[([^\[\]\n]{1,60})\]")
+
+#: 常见 B站表情名（中括号包裹时的完整 token，如 ``[大笑]``、``[doge]``）。
+BILI_EMOJI_TOKEN_NAMES: frozenset[str] = frozenset(
+    {
+        "大笑",
+        "微笑",
+        "偷笑",
+        "呲牙",
+        "呆",
+        "额",
+        "发怒",
+        "害羞",
+        "汗",
+        "机智",
+        "加油",
+        "惊讶",
+        "抠鼻",
+        "酷",
+        "冷",
+        "流汗",
+        "么么哒",
+        "难过",
+        "呕吐",
+        "亲亲",
+        "求关注",
+        "拳头",
+        "笑哭",
+        "吐",
+        "喜欢",
+        "眼冒爱心",
+        "疑问",
+        "晕",
+        "抓狂",
+        "再见",
+        "震惊",
+        "委屈",
+        "傲娇",
+        "辣眼睛",
+        "藏狐",
+        "打脸",
+        "尴尬",
+        "怪我咯",
+        "滑稽",
+        "灵魂出窍",
+        "凉了",
+        "无语",
+        "嫌弃",
+        "思考",
+        "生病",
+        "嘘",
+        "点赞",
+        "鼓掌",
+        "大哭",
+        "吃瓜",
+        "星星眼",
+        "惊喜",
+        "妙啊",
+        "比心",
+        "握手",
+        "玫瑰",
+        "爱心",
+        "蜡烛",
+        "口罩",
+        "保佑",
+        "烈火",
+        "炸弹",
+        "黑洞",
+        "doge",
+        "tv_doge",
+    },
+)
+#: 匹配任意中括号 token（用于再按白名单判断是否为表情）。
+RE_BRACKET_TOKEN = re.compile(r"\[([^\[\]\n]{1,60})\]")
 
 #: 配置默认值（同时用于 _conf_schema.json 与运行时兜底）。
 DEFAULT_POLL_INTERVAL_SECONDS = 300

@@ -399,6 +399,42 @@ class TestRepositoryHygiene:
         for token in (".venv", "__pycache__", ".coverage", "coverage.xml", "data/", "downloads/"):
             assert token in text, token
 
+    def test_no_literal_emoji_in_repository(self):
+        """插件输出统一为纯文本：源码、页面、文档、脚本里不允许出现字面 emoji。
+
+        真实抓包的 fixture（``tests/fixtures``）保留 B站原始内容，其中的 emoji 由
+        渲染层在推送前清洗掉，因此不参与本检查。
+        """
+        offenders: list[str] = []
+        for path in ROOT.rglob("*"):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(ROOT)
+            if rel.parts[0] in {".git", ".venv", "data", "downloads", "__pycache__", ".pytest_cache", ".mypy_cache"}:
+                continue
+            if "fixtures" in rel.parts:
+                continue
+            if path.suffix.lower() not in {
+                ".py",
+                ".json",
+                ".yaml",
+                ".yml",
+                ".md",
+                ".toml",
+                ".txt",
+                ".html",
+                ".mjs",
+                ".js",
+                ".cfg",
+                ".svg",
+            }:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            found = sorted({hex(ord(char)) for char in C.RE_EMOJI.findall(text)})
+            if found:
+                offenders.append(f"{rel}: {found}")
+        assert not offenders, offenders
+
     def test_ci_and_badge_assets_exist(self):
         for rel in (
             ".github/workflows/ci.yml",

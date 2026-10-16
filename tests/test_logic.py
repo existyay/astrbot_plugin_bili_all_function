@@ -93,7 +93,7 @@ class TestBuildDynamicChain:
         text = chain_text(chain)
         assert text.startswith("[B站动态] A-SOUL_Official · 图文动态")
         assert count_images(chain) >= 1
-        assert f"🔗 https://t.bilibili.com/{newest['id_str']}" in text
+        assert f"动态：https://t.bilibili.com/{newest['id_str']}" in text
         # 排版：正文 → 图片 → 链接
         kinds = [type(c).__name__ for c in chain]
         assert kinds[0] == "Plain"
@@ -109,8 +109,8 @@ class TestBuildDynamicChain:
         text = chain_text(chain)
         assert "[B站动态] 嘉然今天吃什么 · 视频动态" in text
         bvid = H.dynamic_archive(item_)["bvid"]
-        assert f"🔗 https://www.bilibili.com/video/{bvid}" in text
-        assert f"🔗 https://t.bilibili.com/{item_['id_str']}" in text
+        assert f"视频：https://www.bilibili.com/video/{bvid}" in text
+        assert f"动态：https://t.bilibili.com/{item_['id_str']}" in text
         assert "播放 " in text and "弹幕 " in text and "时长 " in text
         assert count_images(chain) == 1  # 视频封面
 
@@ -162,10 +162,27 @@ class TestBuildDynamicChain:
 
     def test_text_truncated(self):
         it = item(id_str="7", desc="字" * 500)
-        text = chain_text(L.build_dynamic_chain(it))
+        text = chain_text(L.build_dynamic_chain(it, wrap_width=0))
         body = text.splitlines()[1]
         assert body.endswith("...")
         assert len(body) == 300 + 3
+
+    def test_text_wrapped_by_display_width(self):
+        """自动换行按显示列宽（一个汉字 2 列）生效，且不拆断链接。"""
+        it = item(id_str="8", desc="中文" * 20 + " https://t.bilibili.com/1234567890")
+        chain = L.build_dynamic_chain(it, wrap_width=20)
+        body = chain[0].text.splitlines()[1:]
+        assert len(body) > 2
+        # 链接行允许超宽（URL 不拆分），其余行必须落在列宽内
+        assert all(H.display_width(line) <= 20 for line in body if not line.startswith("http"))
+        assert H.display_width(body[-1]) > 20
+        # 长链接独占一行且不被拆开
+        assert body[-1] == "https://t.bilibili.com/1234567890"
+
+    def test_wrap_width_zero_disables_wrapping(self):
+        it = item(id_str="9", desc="中文" * 50)
+        chain = L.build_dynamic_chain(it, wrap_width=0)
+        assert len(chain[0].text.splitlines()) == 2
 
 
 class TestBuildLiveChain:

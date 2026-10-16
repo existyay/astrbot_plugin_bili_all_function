@@ -54,7 +54,7 @@ python scripts/check_release.py       # 发布前一键门禁（上面几项的�
 
 ## 测试要求
 
-- 新增/修改逻辑必须有测试，整体覆盖率 **不低于 95%**（当前约 99.9%）；
+- 新增/修改逻辑必须有测试，整体覆盖率 **不低于 95%**（当前约 99.97%）；
 - 网络请求一律通过 `tests/conftest.py` 的 `FakeSession` / `route` 构造，
   **测试不得联网**；需要新快照时用 `python scripts/refresh_fixtures.py` 抓取并裁剪后提交；
 - 与 AstrBot 安装/市场相关的约束写在 `tests/test_compliance.py`

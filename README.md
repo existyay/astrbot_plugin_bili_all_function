@@ -3,12 +3,12 @@
 <div align="center">
 
 ![coverage](docs/badges/coverage.svg)
-![version](https://img.shields.io/badge/version-v0.3.1-blue)
+![version](https://img.shields.io/badge/version-v0.4.0-blue)
 ![license](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![astrbot](https://img.shields.io/badge/AstrBot-%3E%3D4.18-ff69b4)
 ![ruff](https://img.shields.io/badge/lint-ruff-261230)
 ![mypy](https://img.shields.io/badge/types-mypy-blue)
-![tests](https://img.shields.io/badge/tests-599%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-676%20passed-brightgreen)
 
 一个聚焦 **B站（bilibili）** 的 AstrBot 插件：链接解析 + UP主动态订阅 + 直播推送。
 
@@ -19,6 +19,10 @@
 - **一键解析视频链接**：统一解析普通文本与 QQ 小程序 JSON 卡片中的 `BV号` / `av号` /
   `bilibili.com/video/...` / `b23.tv` 短链，回复标题、UP主、播放量、点赞、时长、简介与链接。
 - **UP主动态订阅**：后台轮询订阅的 UP 主，有新动态时主动推送（含正文、配图、视频封面与跳转链接）。
+- **多类型专属排版**：视频 / 图文 / 文字 / 转发 / 专栏 / 直播 / 合集 / 音乐 / 番剧 / 课程等动态分别排版，
+  自动补全卡片标题、简介、播放量、阅读量、人气等字段，卡片字段缺失也不会输出 `{...}` 原始数据。
+- **自动换行 + 纯文本输出**：按显示列宽（一个汉字算 2 列）自动换行，链接与 `@用户` 不会被拆开；
+  推送内容统一去除 emoji 与 B站表情 token（如 `[tv_微笑]`），保证各平台客户端显示一致。
 - **直播状态推送**：开播 / 下播自动提醒，开播附带直播间标题与封面。
 - **灵活的过滤器**：支持按 `转发 / 抽奖 / 视频 / 专栏 / 图文 / 直播` 类型过滤，也支持正则过滤，
   可以只接收你关心的内容。
@@ -28,7 +32,7 @@
 - **插件页面**：Dashboard 内嵌 `views/overview` 视图，可视化查看运行状态、订阅量与请求统计。
 - **可观测性**：`/bili_state` 一键自检，并输出请求、推送、下载等运行统计；内置健康快照 API。
 - **安全加固**：Cookie 出网域名白名单 + 全链路脱敏 + 输入长度/正则护栏（见 [SECURITY.md](./SECURITY.md)）。
-- **完整测试**：599 个离线用例，语句覆盖率 100%、整体覆盖率约 99.9%，并带 AstrBot 合规自检。
+- **完整测试**：676 个离线用例，语句覆盖率 100%、整体覆盖率约 99.97%，并带 AstrBot 合规自检。
 
 ## 兼容性
 
@@ -115,6 +119,7 @@
 | `empty_retry_count` | `3` | 动态接口返回空列表时的重试次数（**建议保持 > 0**） |
 | `empty_retry_delay_seconds` | `1.0` | 空响应重试基础间隔，实际等待 = 基础间隔 × 轮次 |
 | `min_request_interval_seconds` | `0.2` | 两次外部请求之间的最小间隔（全局节流，降低风控概率） |
+| `wrap_width` | `60` | 推送文本自动换行的显示列宽（一个汉字算 2 列），`0` 表示不换行 |
 
 </details>
 
@@ -149,7 +154,7 @@
 - 运行状态（轮询是否存活、运行时长、订阅会话数与订阅总数）；
 - 请求统计（总请求、失败、静默风控 412、空响应）；
 - 推送统计（动态推送、直播推送、发送失败）与下载量；
-- 当前轮询策略（间隔、并发、节流、动态条数上限）与功能开关；
+- 当前轮询策略（间隔、并发、节流、动态条数上限、换行列宽）与功能开关；
 - 数据版本（`subscriptions.json` 的 `__schema__`）与 Cookie 脱敏提示。
 
 视图完全自包含（内联 CSS/JS，无外部 CDN 请求），通过 AstrBot 官方 Bridge SDK 获取上下文与调用接口；
@@ -164,7 +169,7 @@
   "data": {
     "plugin": "astrbot_plugin_bili_all_function",
     "display_name": "bili_all",
-    "version": "0.3.1",
+    "version": "0.4.0",
     "uptime_seconds": 812,
     "healthy": true,
     "poll_running": true,
@@ -178,7 +183,8 @@
       "interval_seconds": 300,
       "concurrency": 3,
       "dynamic_limit": 3,
-      "min_request_interval_seconds": 0.2
+      "min_request_interval_seconds": 0.2,
+      "wrap_width": 60
     },
     "stats": {
       "http_requests": 128, "http_failures": 0, "http_silent": 2,
@@ -207,8 +213,8 @@
 
 | 检查 | 命令 | 现状 |
 | --- | --- | --- |
-| 单元测试 + 覆盖率门禁（≥95%） | `pytest` | 599 passed，99.9% |
-| 最低支持版本兼容性 | `pytest tests --ignore=tests/test_compliance.py`（对 AstrBot 4.18） | 565 passed |
+| 单元测试 + 覆盖率门禁（≥95%） | `pytest` | 676 passed，99.97% |
+| 最低支持版本兼容性 | `pytest tests --ignore=tests/test_compliance.py`（对 AstrBot 4.18） | 641 passed |
 | 静态检查（ruff，生产级规则集） | `ruff check .` | 通过 |
 | 代码风格 | `ruff format --check .` | 通过 |
 | 类型检查（mypy） | `mypy` | 通过（5 个源码模块，零错误） |
@@ -230,25 +236,69 @@
 
 ## 推送效果
 
+推送文本按**显示列宽**自动换行（`subscription.wrap_width`，默认 60 列，填 `0` 关闭），
+长链接不会被拆断；内容中的 emoji 与 B站表情 token 会被清洗为纯文本。
+
+视频动态（头像/标题 → 统计 → 封面 → 链接）：
+
 ```text
 [B站动态] 嘉然今天吃什么 · 视频动态
 闪身步实用教程
 上次教完了，这次该实践了，大家学会了没有？
-播放 2.5万 · 弹幕 231 · 时长 00:29
+播放 2.5万 | 弹幕 231 | 时长 00:29
 <视频封面图>
-🔗 https://www.bilibili.com/video/BV1zKJQ6fEaY
-🔗 https://t.bilibili.com/1259695031548117009
+视频：https://www.bilibili.com/video/BV1zKJQ6fEaY
+动态：https://t.bilibili.com/1259695031548117009
 ```
 
-排版顺序固定为 **头部 → 正文（含视频统计 / 转发的原文摘要）→ 图片 → 链接**，
-既保证正文不会被多图挤出屏幕，也保证最新动态永远出现在推送批次中。
+图文 / 长文动态（正文按列宽换行，空行保留）：
+
+```text
+[B站动态] A-SOUL_Official · 图文动态
+时间流转，与你的心意依旧在舞台灯光亮起的此刻共鸣
+本次【A-SOUL此间共鸣演唱会】流程安排及场贩情报公开，请小伙伴
+们仔细阅读！
+10月24日-10月25日，和小伙伴们不见不散~
+<配图 1..9>
+动态：https://t.bilibili.com/1259699575671750656
+```
+
+转发动态（先给转发理由，再给原文摘要与原动态数据）：
+
+```text
+[B站动态] A-SOUL_Official · 转发动态
+真心驱散乌云后，就能看到舞台中心闪耀的贝拉~
+@贝拉kira: 遥远闪烁的，是《雨季后的星光》| 贝拉个人单曲试听
+新单曲将在10.24-10.25的A-SOUL 此间共鸣线下演出中首次表演
+和贝拉一起迎接雨季后的星光吧~
+原动态数据：播放 1.3万 | 弹幕 136 | 时长 00:43
+<封面图>
+动态：https://t.bilibili.com/1259646803390758934
+原视频：https://www.bilibili.com/video/BV1Hw4m1r7dp
+原文：https://t.bilibili.com/1259644763297021968
+```
+
+专栏 / 直播推荐类卡片（标题 + 摘要 + 统计 + 对应链接）：
+
+```text
+[B站动态] 某某UP主 · 专栏文章
+《一些关于新版本的碎碎念》
+这次更新主要调整了排版与过滤逻辑……
+阅读 2.0万
+专栏：https://www.bilibili.com/read/cv123456
+动态：https://t.bilibili.com/1259695031548117009
+```
 
 ```text
 [B站直播] 嘉然今天吃什么 开播了
 【突击】一起看jojo吧~
 <直播封面图>
-🔗 https://live.bilibili.com/22637261
+直播：https://live.bilibili.com/22637261
 ```
+
+排版顺序固定为 **头部 → 正文（含卡片标题/简介与统计、转发的原文摘要）→ 图片 → 链接**，
+既保证正文不会被多图挤出屏幕，也保证最新动态永远出现在推送批次中；
+链接统一带中文标签（`视频：` / `动态：` / `直播：` / `专栏：` / `原文：`），不使用 emoji 前缀。
 
 ## 实现要点
 
@@ -265,6 +315,9 @@
   再按时间正序推送其中**最新**的 `dynamic_limit` 条。
 - **排版修复**：新版接口中只有 `MODULE_TYPE_DESC` 的动态（无 `module_dynamic`）
   已能被正确规范化，正文不会再丢失；`2.5万` 这类计数也能安全解析。
+- **排版与清洗**：正文按显示列宽自动换行（含基本「行头禁则」，标点不会落到行首），
+  链接、`@用户`、`#话题#` 视为整体不拆断；渲染前统一清洗 Unicode emoji 与 B站表情 token，
+  并把 `{"text": ...}` 这类字典字段安全地拆成文本，避免把原始 JSON 发到群里。
 
 ## 开发与测试
 

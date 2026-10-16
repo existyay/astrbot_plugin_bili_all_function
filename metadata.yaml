@@ -2,7 +2,7 @@ name: astrbot_plugin_bili_all_function # 插件唯一识别名，以 astrbot_plu
 display_name: bili_all # 用于展示的名字（需要版本 >= v4.5.0，低版本不会报错，请放心填写）
 short_desc: B站链接解析 + UP主动态订阅 + 直播推送 # 插件短简介（插件市场列表展示）
 desc: 统一解析普通文本与 QQ 小程序卡片中的 B站视频链接并回复视频信息，支持可选的视频下载发送；订阅 UP 主动态与直播状态并后台轮询推送，支持类型/正则过滤、管理员全局订阅与 LLM 函数工具调用。 # 插件简短描述
-version: v0.3.1 # 插件版本号。格式：v1.1.1 或者 v1.1
+version: v0.4.0 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: existyay # 作者
 repo: https://github.com/existyay/astrbot_plugin_bili_all_function # 插件的仓库地址
 support_platforms:

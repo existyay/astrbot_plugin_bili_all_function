@@ -232,11 +232,11 @@ check(footerText.includes(SAMPLE_VERSION), "版本号未渲染");
 check(ids.get("error").hidden !== false || !ids.get("error").textContent, "错误框不应显示");
 
 if (failures.length > 0) {
-  console.error("❌ 插件页面校验失败：");
+  console.error("[失败] 插件页面校验失败：");
   for (const message of failures) {
     console.error(`  - ${message}`);
   }
   process.exit(1);
 }
 
-console.log("✅ 插件页面校验通过（语法 + 渲染冒烟）");
+console.log("[通过] 插件页面校验通过（语法 + 渲染冒烟）");

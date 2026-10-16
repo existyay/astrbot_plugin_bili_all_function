@@ -65,10 +65,10 @@ def main() -> int:
     for title, cmd in steps:
         code = run(title, cmd)
         if code != 0:
-            print(f"\n❌ 未通过：{title}", file=sys.stderr)
+            print(f"\n[未通过] {title}", file=sys.stderr)
             return code
 
-    print("\n✅ 全部检查通过，可以发布。")
+    print("\n[通过] 全部检查通过，可以发布。")
     return 0
 
 

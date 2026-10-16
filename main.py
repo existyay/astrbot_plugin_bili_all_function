@@ -65,6 +65,8 @@ try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
         DYNAMIC_FEED_FEATURES,
         DYNAMIC_SILENT_CODES,
         DYNAMIC_SPACE_URL,
+        DYNAMIC_TEXT_WRAP_WIDTH,
+        DYNAMIC_TEXT_WRAP_WIDTH_MAX,
         MAX_JSON_BYTES,
         MAX_LLM_URL_LEN,
         MAX_MESSAGE_SCAN_LEN,
@@ -143,6 +145,8 @@ except ImportError:  # pragma: no cover
         DYNAMIC_FEED_FEATURES,
         DYNAMIC_SILENT_CODES,
         DYNAMIC_SPACE_URL,
+        DYNAMIC_TEXT_WRAP_WIDTH,
+        DYNAMIC_TEXT_WRAP_WIDTH_MAX,
         MAX_JSON_BYTES,
         MAX_LLM_URL_LEN,
         MAX_MESSAGE_SCAN_LEN,
@@ -197,7 +201,7 @@ except ImportError:  # pragma: no cover
 #: 可重试的 HTTP 状态码（模块级别名，保持向后兼容的导入路径）。
 _RETRYABLE_HTTP = RETRYABLE_HTTP
 
-_STATUS_ICONS = {"ok": "✅", "warn": "⚠️", "fail": "❌"}
+_STATUS_ICONS = {"ok": "[正常]", "warn": "[警告]", "fail": "[异常]"}
 
 
 def _status_icon(status: str) -> str:
@@ -289,6 +293,7 @@ class BiliAllPlugin(Star):
         self.uid_task_gap_seconds = DEFAULT_UID_TASK_GAP_SECONDS
         self.uid_concurrency = DEFAULT_UID_CONCURRENCY
         self.recent_ids_limit = DEFAULT_RECENT_IDS_LIMIT
+        self.dynamic_wrap_width = DYNAMIC_TEXT_WRAP_WIDTH
         self.empty_retry_count = DEFAULT_EMPTY_RETRY_COUNT
         self.empty_retry_delay_seconds = DEFAULT_EMPTY_RETRY_DELAY_SECONDS
         self.http_retry_count = DEFAULT_HTTP_RETRY_COUNT
@@ -399,6 +404,7 @@ class BiliAllPlugin(Star):
                 "concurrency": self.uid_concurrency,
                 "dynamic_limit": self.dynamic_limit,
                 "min_request_interval_seconds": self.min_request_interval_seconds,
+                "wrap_width": self.dynamic_wrap_width,
             },
             "stats": dict(self.stats),
         }
@@ -511,6 +517,13 @@ class BiliAllPlugin(Star):
             c("subscription.recent_ids_limit", DEFAULT_RECENT_IDS_LIMIT),
             DEFAULT_RECENT_IDS_LIMIT,
         )
+        # 0 表示关闭自动换行（合法值），故 min_val=0
+        self.dynamic_wrap_width = ci(
+            c("subscription.wrap_width", DYNAMIC_TEXT_WRAP_WIDTH),
+            DYNAMIC_TEXT_WRAP_WIDTH,
+            min_val=0,
+        )
+        self.dynamic_wrap_width = min(self.dynamic_wrap_width, DYNAMIC_TEXT_WRAP_WIDTH_MAX)
         self.empty_retry_count = ci(
             c("subscription.empty_retry_count", DEFAULT_EMPTY_RETRY_COUNT),
             DEFAULT_EMPTY_RETRY_COUNT,
@@ -1202,7 +1215,7 @@ class BiliAllPlugin(Star):
                 if err:
                     await self._safe_send(
                         event.unified_msg_origin,
-                        [Comp.Plain(f"⚠️ {err}")],
+                        [Comp.Plain(f"[警告] {err}")],
                         "video_download",
                     )
                 return
@@ -1215,7 +1228,7 @@ class BiliAllPlugin(Star):
             self.logger.warning("发送下载视频失败: %s", exc)
             await self._safe_send(
                 event.unified_msg_origin,
-                [Comp.Plain(f"⚠️ 视频发送失败: {exc}")],
+                [Comp.Plain(f"[警告] 视频发送失败: {exc}")],
                 "video_download",
             )
         finally:
@@ -1373,7 +1386,11 @@ class BiliAllPlugin(Star):
             for item in pick_push_batch(new_items, self.dynamic_limit):
                 if should_filter_dynamic(item, sub, compiled):
                     continue
-                if await self._safe_send(session, build_dynamic_chain(item), "dynamic_push"):
+                if await self._safe_send(
+                    session,
+                    build_dynamic_chain(item, wrap_width=self.dynamic_wrap_width),
+                    "dynamic_push",
+                ):
                     self.stats["dynamic_pushes"] += 1
 
         # 直播状态变更
@@ -1385,7 +1402,11 @@ class BiliAllPlugin(Star):
                 live_info.setdefault("uname", live_info.get("uname") or f"UID {sub.uid}")
                 if await self._safe_send(
                     session,
-                    build_live_chain(live_info, now_live=now_live),
+                    build_live_chain(
+                        live_info,
+                        now_live=now_live,
+                        wrap_width=self.dynamic_wrap_width,
+                    ),
                     "live_push",
                 ):
                     self.stats["live_pushes"] += 1
@@ -1632,18 +1653,18 @@ class BiliAllPlugin(Star):
         lines: list[str] = [f"bili_state 自检结果（v{PLUGIN_VERSION} / {PLUGIN_DISPLAY_NAME}）"]
 
         if errors:
-            lines.append("\n❌ 配置检查未通过：")
+            lines.append("\n[异常] 配置检查未通过：")
             lines.extend(f"- {e}" for e in errors)
             if warnings:
-                lines.append("\n⚠️ 配置警告：")
+                lines.append("\n[警告] 配置警告：")
                 lines.extend(f"- {w}" for w in warnings)
             lines.append("\n请先修复配置后再执行 /bili_state。")
             yield event.plain_result("\n".join(lines))
             return
 
-        lines.append("\n✅ 配置检查通过")
+        lines.append("\n[正常] 配置检查通过")
         if warnings:
-            lines.append("⚠️ 配置警告：")
+            lines.append("[警告] 配置警告：")
             lines.extend(f"- {w}" for w in warnings)
 
         cookie_status, cookie_msg = await self._check_cookie()
@@ -1803,7 +1824,7 @@ class BiliAllPlugin(Star):
         for item in candidates:
             if should_filter_dynamic(item, test_sub, compiled):
                 continue
-            chain = build_dynamic_chain(item)
+            chain = build_dynamic_chain(item, wrap_width=self.dynamic_wrap_width)
             detail = self._fmt_filter(ft, fr)
             if detail:
                 chain.append(Comp.Plain(f"\n测试过滤条件: {detail.strip()}"))
@@ -1927,7 +1948,7 @@ class BiliAllPlugin(Star):
         if info and self.send_video_info:
             await self._safe_send(
                 event.unified_msg_origin,
-                build_video_chain(info, ref),
+                build_video_chain(info, ref, wrap_width=self.dynamic_wrap_width),
                 "video_info",
             )
         await self._send_video_download(event, ref, info)
@@ -1959,4 +1980,4 @@ class BiliAllPlugin(Star):
         info = await self._get_video_info(ref, retry_count=self.video_retry_count)
         if not info:
             return "视频信息获取失败，请稍后重试。"
-        return build_video_text(info, ref)
+        return build_video_text(info, ref, wrap_width=self.dynamic_wrap_width)

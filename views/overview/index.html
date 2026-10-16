@@ -174,7 +174,7 @@
   }
 
   function featurePill(label, enabled) {
-    var pill = el("span", "pill " + (enabled ? "on" : "off"), label + (enabled ? " ✓" : " ✕"));
+    var pill = el("span", "pill " + (enabled ? "on" : "off"), label);
     return pill;
   }
 
@@ -223,7 +223,10 @@
       var line = el("div", "kv");
       line.appendChild(el("span", null, item[0]));
       var holder = el("span");
-      holder.appendChild(featurePill(item[1] ? "ON" : "OFF", !!item[1]));
+      holder.appendChild(featurePill(
+        item[1] ? t("views.overview.state_on", "开启") : t("views.overview.state_off", "关闭"),
+        !!item[1]
+      ));
       line.appendChild(holder);
       featureCard.appendChild(line);
     });
@@ -233,7 +236,10 @@
       [t("views.overview.poll_interval", "轮询周期"), (poll.interval_seconds || 0) + t("views.overview.seconds", "秒")],
       [t("views.overview.poll_concurrency", "UID 并发"), poll.concurrency || 0],
       [t("views.overview.poll_dynamic_limit", "单轮推送上限"), poll.dynamic_limit || 0],
-      [t("views.overview.poll_throttle", "请求节流"), (poll.min_request_interval_seconds || 0) + t("views.overview.seconds", "秒")]
+      [t("views.overview.poll_throttle", "请求节流"), (poll.min_request_interval_seconds || 0) + t("views.overview.seconds", "秒")],
+      [t("views.overview.poll_wrap_width", "换行列宽"), poll.wrap_width
+        ? poll.wrap_width + t("views.overview.columns", "列")
+        : t("views.overview.wrap_off", "不换行")]
     ]));
 
     panels.appendChild(panelCard(t("views.overview.cookie", "登录态"), [

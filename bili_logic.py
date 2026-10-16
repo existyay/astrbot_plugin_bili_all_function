@@ -16,13 +16,17 @@ try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
     from .bili_constants import (
         DYNAMIC_DETAIL_URL,
         DYNAMIC_TEXT_LIMIT,
+        DYNAMIC_TEXT_WRAP_WIDTH,
         LIVE_ROOM_URL,
         VIDEO_DESC_LIMIT,
         VIDEO_DETAIL_URL,
     )
     from .bili_helpers import (
+        clean_and_wrap,
+        display_width,
         dynamic_archive,
         dynamic_author_name,
+        dynamic_card,
         dynamic_forward_orig,
         dynamic_id,
         dynamic_type,
@@ -31,27 +35,35 @@ try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
         extract_dynamic_text,
         extract_forward_text,
         extract_live_cover,
+        extract_live_title,
         format_count,
         format_duration,
         is_forward_lottery,
+        is_http_url,
         is_lottery_text,
         is_top_dynamic,
         matches_any_pattern,
         resolve_video_page,
+        text_value,
         truncate,
+        wrap_text,
     )
     from .bili_models import Subscription
 except ImportError:  # pragma: no cover
     from bili_constants import (
         DYNAMIC_DETAIL_URL,
         DYNAMIC_TEXT_LIMIT,
+        DYNAMIC_TEXT_WRAP_WIDTH,
         LIVE_ROOM_URL,
         VIDEO_DESC_LIMIT,
         VIDEO_DETAIL_URL,
     )
     from bili_helpers import (
+        clean_and_wrap,
+        display_width,
         dynamic_archive,
         dynamic_author_name,
+        dynamic_card,
         dynamic_forward_orig,
         dynamic_id,
         dynamic_type,
@@ -60,14 +72,18 @@ except ImportError:  # pragma: no cover
         extract_dynamic_text,
         extract_forward_text,
         extract_live_cover,
+        extract_live_title,
         format_count,
         format_duration,
         is_forward_lottery,
+        is_http_url,
         is_lottery_text,
         is_top_dynamic,
         matches_any_pattern,
         resolve_video_page,
+        text_value,
         truncate,
+        wrap_text,
     )
     from bili_models import Subscription
 
@@ -78,8 +94,13 @@ _DRAW_FILTERS = frozenset({"draw", "lottery"})
 # ───────────────────────── 视频消息链 ─────────────────────────
 
 
-def build_video_text(info: dict[str, Any], ref: dict[str, Any]) -> str:
-    """根据视频信息与引用构建纯文本摘要。"""
+def build_video_text(
+    info: dict[str, Any],
+    ref: dict[str, Any],
+    *,
+    wrap_width: int = DYNAMIC_TEXT_WRAP_WIDTH,
+) -> str:
+    """根据视频信息与引用构建纯文本摘要（自动换行、无 emoji）。"""
     stat: dict[str, Any] = info["stat"] if isinstance(info.get("stat"), dict) else {}
     owner: dict[str, Any] = info["owner"] if isinstance(info.get("owner"), dict) else {}
     page, page_idx, page_count = resolve_video_page(info, ref)
@@ -88,74 +109,131 @@ def build_video_text(info: dict[str, Any], ref: dict[str, Any]) -> str:
     duration = page.get("duration") or info.get("duration") or 0
 
     lines = [
-        f"{info.get('title') or '未知标题'}",
-        f"UP: {owner.get('name') or '未知UP'}",
+        clean_and_wrap(text_value(info.get("title")) or "未知标题", wrap_width),
+        f"UP: {text_value(owner.get('name')) or '未知UP'}",
         f"播放: {format_count(stat.get('view'))}",
         f"点赞: {format_count(stat.get('like'))}",
         f"时长: {format_duration(duration)}",
     ]
     if page_count > 1:
-        part = str(page.get("part") or "").strip()
+        part = text_value(page.get("part"))
         lines.append(f"分P: {page_idx + 1}/{page_count} {part}".rstrip())
-    desc = str(info.get("desc") or "").strip()
+    desc = text_value(info.get("desc"))
     if desc:
-        lines.append(f"简介: {truncate(desc, VIDEO_DESC_LIMIT)}")
+        prefix = "简介: "
+        desc_width = max(1, wrap_width - display_width(prefix)) if wrap_width > 0 else 0
+        lines.append(prefix + wrap_text(truncate(desc, VIDEO_DESC_LIMIT), desc_width))
     if bvid:
         lines.append(VIDEO_DETAIL_URL.format(bvid=bvid))
     return "\n".join(lines)
 
 
-def build_video_chain(info: dict[str, Any], ref: dict[str, Any]) -> list[object]:
+def build_video_chain(
+    info: dict[str, Any],
+    ref: dict[str, Any],
+    *,
+    wrap_width: int = DYNAMIC_TEXT_WRAP_WIDTH,
+) -> list[object]:
     """根据视频信息和引用构建消息链（封面 + 文本）。"""
     chain: list[object] = []
     cover = str(info.get("pic") or "").strip()
     if cover.startswith(("http://", "https://")):
         with suppress(TypeError, ValueError):  # pragma: no cover - 仅防御异常图片组件
             chain.append(Comp.Image.fromURL(cover))
-    chain.append(Comp.Plain(build_video_text(info, ref)))
+    chain.append(Comp.Plain(build_video_text(info, ref, wrap_width=wrap_width)))
     return chain
 
 
 # ───────────────────────── 动态消息链 ─────────────────────────
 
 
-def _dynamic_body_lines(item: dict[str, Any]) -> list[str]:
-    """动态正文段落（正文 / 视频统计 / 转发原文）。"""
+def dynamic_headline(item: dict[str, Any]) -> str:
+    """动态推送的头部行：``[B站动态] UP主 · 类型``。"""
+    return f"[B站动态] {dynamic_author_name(item)} · {dynamic_type_label(item)}"
+
+
+def _dynamic_body_lines(item: dict[str, Any], wrap_width: int) -> list[str]:
+    """各类型动态的正文段落（已清洗 emoji，已按列宽换行）。
+
+    排版通用规则：**正文 → 卡片标题/简介 → 统计信息 → 转发原文**，
+    同一内容在正文里出现过就不再重复占行（例如视频标题已含在正文中）。
+    """
     lines: list[str] = []
     text = extract_dynamic_text(item)
     if text:
-        lines.append(truncate(text, DYNAMIC_TEXT_LIMIT))
+        lines.append(wrap_text(truncate(text, DYNAMIC_TEXT_LIMIT), wrap_width))
 
-    if dynamic_type(item) == "DYNAMIC_TYPE_AV":
-        archive = dynamic_archive(item)
-        stat = archive.get("stat") if isinstance(archive.get("stat"), dict) else {}
-        meta: list[str] = []
-        if stat.get("play") is not None:
-            meta.append(f"播放 {format_count(stat.get('play'))}")
-        if stat.get("danmaku") is not None:
-            meta.append(f"弹幕 {format_count(stat.get('danmaku'))}")
-        duration = archive.get("duration_text") or archive.get("duration")
-        if duration:
-            meta.append(f"时长 {format_duration(duration)}")
-        if meta:
-            lines.append(" · ".join(meta))
+    card = dynamic_card(item)
+    title = card["title"]
+    if title and title not in text:
+        lines.append(wrap_text(f"《{title}》", wrap_width))
+    desc = card["desc"]
+    if desc and desc not in text and card["kind"] != "视频":
+        lines.append(wrap_text(truncate(desc, VIDEO_DESC_LIMIT), wrap_width))
+    if card["stat"]:
+        lines.append(card["stat"])
 
     if dynamic_type(item) == "DYNAMIC_TYPE_FORWARD" and dynamic_forward_orig(item):
         forward = extract_forward_text(item)
         if forward:
-            lines.append(truncate(forward, DYNAMIC_TEXT_LIMIT))
-    return lines
+            lines.append(wrap_text(truncate(forward, DYNAMIC_TEXT_LIMIT), wrap_width))
+        orig_card = dynamic_card(dynamic_forward_orig(item))
+        if orig_card["stat"]:
+            lines.append(f"原动态数据：{orig_card['stat']}")
+    return [line for line in lines if line.strip()]
 
 
-def build_dynamic_chain(item: dict[str, Any]) -> list[object]:
-    """构建动态推送消息链：标题 + 正文 + 图片 + 链接。
+def _dynamic_link_lines(item: dict[str, Any]) -> list[str]:
+    """链接块（带中文标签、无 emoji），按「视频 → 卡片 → 直播 → 动态 → 原文」排序。"""
+    entries: list[tuple[str, str]] = []
+    seen: set[str] = set()
 
-    排版顺序固定为「头部 → 正文 → 图片 → 链接」，避免多图把正文顶出屏幕。
+    def add(label: str, url: Any) -> None:
+        text = str(url or "").strip()
+        if is_http_url(text) and text not in seen:
+            seen.add(text)
+            entries.append((label, text))
+
+    card = dynamic_card(item)
+    bvid = str(dynamic_archive(item).get("bvid") or "").strip()
+    if bvid:
+        add("视频", VIDEO_DETAIL_URL.format(bvid=bvid))
+    if card["url"]:
+        add(card["kind"] or "详情", card["url"])
+    if card["room"]:
+        add("直播", LIVE_ROOM_URL.format(room_id=card["room"]))
+    dyn_id = dynamic_id(item)
+    if dyn_id:
+        add("动态", DYNAMIC_DETAIL_URL.format(dyn_id=dyn_id))
+
+    orig = dynamic_forward_orig(item)
+    if orig:
+        orig_card = dynamic_card(orig)
+        orig_bvid = str(dynamic_archive(orig).get("bvid") or "").strip()
+        if orig_bvid:
+            add("原视频", VIDEO_DETAIL_URL.format(bvid=orig_bvid))
+        if orig_card["url"]:
+            add("原文", orig_card["url"])
+        orig_id = dynamic_id(orig)
+        if orig_id:
+            add("原文", DYNAMIC_DETAIL_URL.format(dyn_id=orig_id))
+    return [f"{label}：{url}" for label, url in entries]
+
+
+def build_dynamic_chain(
+    item: dict[str, Any],
+    *,
+    wrap_width: int = DYNAMIC_TEXT_WRAP_WIDTH,
+) -> list[object]:
+    """构建动态推送消息链：头部 + 正文（按类型排版）→ 图片 → 链接。
+
+    排版顺序固定为「头部 → 正文 → 图片 → 链接」，避免多图把正文顶出屏幕；
+    *wrap_width* 为正文自动换行的显示列宽（0 表示不换行）。
     """
     chain: list[object] = []
-    header = f"[B站动态] {dynamic_author_name(item)} · {dynamic_type_label(item)}"
-    body_lines = _dynamic_body_lines(item)
-    chain.append(Comp.Plain("\n".join([header, *body_lines]) if body_lines else header))
+    body_lines = _dynamic_body_lines(item, wrap_width)
+    text = "\n".join([dynamic_headline(item), *body_lines]) if body_lines else dynamic_headline(item)
+    chain.append(Comp.Plain(text))
 
     for url in extract_dynamic_images(item):
         try:
@@ -163,24 +241,21 @@ def build_dynamic_chain(item: dict[str, Any]) -> list[object]:
         except (TypeError, ValueError):  # pragma: no cover - 仅防御异常图片组件
             continue
 
-    links: list[str] = []
-    archive = dynamic_archive(item)
-    bvid = str(archive.get("bvid") or "").strip()
-    if bvid:
-        links.append(VIDEO_DETAIL_URL.format(bvid=bvid))
-    dyn_id = dynamic_id(item)
-    if dyn_id:
-        links.append(DYNAMIC_DETAIL_URL.format(dyn_id=dyn_id))
+    links = _dynamic_link_lines(item)
     if links:
-        chain.append(Comp.Plain("🔗 " + "\n🔗 ".join(links)))
+        chain.append(Comp.Plain("\n".join(links)))
     return chain
 
 
-def build_live_chain(live_info: dict[str, Any], *, now_live: bool) -> list[object]:
+def build_live_chain(
+    live_info: dict[str, Any],
+    *,
+    now_live: bool,
+    wrap_width: int = DYNAMIC_TEXT_WRAP_WIDTH,
+) -> list[object]:
     """构建直播状态推送消息链（开播含封面，下播仅文本）。"""
-    uname = str(live_info.get("uname") or "UP主").strip()
+    uname = text_value(live_info.get("uname")) or "UP主"
     room = str(live_info.get("room_id") or "").strip()
-    title = str(live_info.get("title") or "").strip()
 
     chain: list[object] = []
     if not now_live:
@@ -188,15 +263,16 @@ def build_live_chain(live_info: dict[str, Any], *, now_live: bool) -> list[objec
         return chain
 
     lines = [f"[B站直播] {uname} 开播了"]
+    title = extract_live_title(live_info)
     if title:
-        lines.append(title)
+        lines.append(wrap_text(title, wrap_width))
     chain.append(Comp.Plain("\n".join(lines)))
     cover = extract_live_cover(live_info)
     if cover:
         with suppress(TypeError, ValueError):  # pragma: no cover - 仅防御异常图片组件
             chain.append(Comp.Image.fromURL(cover))
     if room:
-        chain.append(Comp.Plain(f"🔗 {LIVE_ROOM_URL.format(room_id=room)}"))
+        chain.append(Comp.Plain(f"直播：{LIVE_ROOM_URL.format(room_id=room)}"))
     return chain
 
 

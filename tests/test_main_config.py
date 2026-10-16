@@ -246,10 +246,11 @@ class TestValidateConfig:
 
 class TestFmtHelpers:
     def test_status_icon(self):
-        assert M._status_icon("ok") == "✅"
-        assert M._status_icon("warn") == "⚠️"
-        assert M._status_icon("fail") == "❌"
-        assert M._status_icon("unknown") == "❌"
+        """状态标记必须是纯文本（插件输出不包含 emoji）。"""
+        assert M._status_icon("ok") == "[正常]"
+        assert M._status_icon("warn") == "[警告]"
+        assert M._status_icon("fail") == "[异常]"
+        assert M._status_icon("unknown") == "[异常]"
 
     def test_parse_uid_args(self):
         p = M.BiliAllPlugin._parse_uid_args(["/bili_sub", "123", "video", "抽奖"])

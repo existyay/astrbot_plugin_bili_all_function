@@ -5,14 +5,18 @@
 
 from __future__ import annotations
 
+import json
 import re
+import unicodedata
 from collections.abc import Sequence
+from contextlib import suppress
 from typing import Any
 from urllib.parse import urlparse
 
 try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
     from .bili_constants import (
         BILI_COOKIE_HOST_SUFFIXES,
+        BILI_EMOJI_TOKEN_NAMES,
         DEFAULT_DYNAMIC_TYPE_LABEL,
         DYNAMIC_IMAGE_LIMIT,
         DYNAMIC_TOP_TAG,
@@ -22,16 +26,20 @@ try:  # pragma: no cover - 包内导入 / 单文件加载两种场景
         MAX_FILTER_REGEX_LEN,
         MAX_UID,
         RE_AV,
+        RE_BRACKET_TOKEN,
         RE_BV,
+        RE_EMOJI,
         RE_LOTTERY,
         RE_SHORT_LINK,
         RE_VIDEO_LINK,
+        RE_ZERO_WIDTH,
         SAFE_FILENAME_RE,
         SENSITIVE_COOKIE_KEYS,
     )
 except ImportError:  # pragma: no cover
     from bili_constants import (
         BILI_COOKIE_HOST_SUFFIXES,
+        BILI_EMOJI_TOKEN_NAMES,
         DEFAULT_DYNAMIC_TYPE_LABEL,
         DYNAMIC_IMAGE_LIMIT,
         DYNAMIC_TOP_TAG,
@@ -41,10 +49,13 @@ except ImportError:  # pragma: no cover
         MAX_FILTER_REGEX_LEN,
         MAX_UID,
         RE_AV,
+        RE_BRACKET_TOKEN,
         RE_BV,
+        RE_EMOJI,
         RE_LOTTERY,
         RE_SHORT_LINK,
         RE_VIDEO_LINK,
+        RE_ZERO_WIDTH,
         SAFE_FILENAME_RE,
         SENSITIVE_COOKIE_KEYS,
     )
@@ -52,6 +63,15 @@ except ImportError:  # pragma: no cover
 _HTTP_PREFIXES = ("http://", "https://")
 _EMPTY_COUNT_TOKENS = {"", "-", "--", "—", "——", "null", "none", "nan"}
 _COUNT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*([万亿]?)")
+#: 允许在标记之间断行的空白（换行时丢弃）。
+_SPACE_RE = re.compile(r"[ \t]+")
+#: 删除 emoji/表情后残留在全角标点旁的空白（如「， 与」「与 （」）。
+_SPACE_BEFORE_CJK_PUNCT = re.compile(r"[ \t]+(?=[，。！？；：、）】》」』…（【《「『])")
+_SPACE_AFTER_CJK_OPEN = re.compile(r"(?<=[（【《「『])[ \t]+")
+#: 全角标点后紧跟中文时的多余空格（英文句子里的「， see」不受影响）。
+_SPACE_AFTER_CJK_PUNCT = re.compile(r"(?<=[，。！？；：、…])[ \t]+(?=[\u4e00-\u9fff])")
+#: 行头禁则：这些标点不允许出现在换行后的行首（会连同前一个字符一起下移）。
+_NO_LINE_START = "，。！？；：、）】》」』…·"
 
 
 # ───────────────────────── 安全嵌套取值 ─────────────────────────
@@ -190,6 +210,179 @@ def truncate(s: str, max_len: int, suffix: str = "...") -> str:
     return s if len(s) <= max_len else s[:max_len] + suffix
 
 
+# ───────────────────────── 文本清洗与排版 ─────────────────────────
+
+
+def strip_emoji(text: str) -> str:
+    """删除 Unicode emoji（含变体选择符、零宽连接符、按键帽），其余字符原样保留。"""
+    if not text:
+        return text
+    return RE_EMOJI.sub("", text)
+
+
+def strip_bili_emoji_tokens(text: str) -> str:
+    """删除B站内置表情在扁平文本中的 token（如 ``[tv_微笑]``、``[2026画册_糖糖回家]``）。
+
+    只删除「看起来是表情」的中括号 token：``tv_`` 前缀、含下划线的多段名、
+    或名称命中常见表情白名单；``[公告]``、``[A-SOUL]``、``[1_2]``、``【重点】`` 保留。
+    """
+    if not text or "[" not in text:
+        return text
+
+    def _drop(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        if inner.lower().startswith("tv_") or inner in BILI_EMOJI_TOKEN_NAMES:
+            return ""
+        if "_" in inner:
+            head, _, tail = inner.partition("_")
+            # 形如「名称_名称」的表情名；纯数字下划线文本（如 [1_2]）保留
+            if head.strip() and tail.strip() and not head.strip().isdigit():
+                return ""
+        return match.group(0)
+
+    return RE_BRACKET_TOKEN.sub(_drop, text)
+
+
+def clean_text(text: str, *, keep_newlines: bool = True) -> str:
+    """统一清洗B站来源文本：去 emoji / 表情 token / 零宽字符，并规整空白。"""
+    if not text:
+        return ""
+    cleaned = strip_bili_emoji_tokens(strip_emoji(str(text)))
+    cleaned = RE_ZERO_WIDTH.sub("", cleaned)
+    cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = _SPACE_BEFORE_CJK_PUNCT.sub("", cleaned)
+    cleaned = _SPACE_AFTER_CJK_OPEN.sub("", cleaned)
+    cleaned = _SPACE_AFTER_CJK_PUNCT.sub("", cleaned)
+    lines: list[str] = []
+    for raw_line in cleaned.split("\n"):
+        line = _SPACE_RE.sub(" ", raw_line).strip()
+        if line or (lines and lines[-1]):
+            lines.append(line)
+    while lines and not lines[-1]:
+        lines.pop()
+    if not lines:
+        return ""
+    if not keep_newlines:
+        return " ".join(part for part in lines if part)
+    return "\n".join(lines)
+
+
+def display_width(text: str) -> int:
+    """字符串的显示列宽：东亚宽/全角字符计 2 列，组合记号计 0 列，其余计 1 列。"""
+    width = 0
+    for char in text:
+        if unicodedata.combining(char):
+            continue
+        width += 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+    return width
+
+
+def _split_atoms(line: str) -> list[tuple[str, bool]]:
+    """把一行拆成「可断行原子」``(文本, 前面是否有空格)``。
+
+    URL / ``@用户`` / ``#话题#`` 保持完整；中文按字断行，ASCII 单词整体保留。
+    """
+    atoms: list[tuple[str, bool]] = []
+    for index, chunk in enumerate(_SPACE_RE.split(line.strip())):
+        spaced = index > 0
+        if is_http_url(chunk) or chunk.startswith(("@", "#")):
+            atoms.append((chunk, spaced))
+            continue
+        current = ""
+        first = True
+        for char in chunk:
+            if unicodedata.east_asian_width(char) in ("W", "F") or not char.isascii():
+                if current:
+                    atoms.append((current, spaced and first))
+                    current = ""
+                    first = False
+                atoms.append((char, spaced and first))
+                first = False
+            else:
+                current += char
+        if current:
+            atoms.append((current, spaced and first))
+    return atoms
+
+
+def _join_atoms(items: Sequence[tuple[str, bool]]) -> str:
+    out = ""
+    for text, spaced in items:
+        if spaced and out:
+            out += " "
+        out += text
+    return out
+
+
+def wrap_text(text: str, width: int = 0, *, indent: str = "") -> str:
+    """按显示列宽自动换行。
+
+    * ``width <= 0`` 时原样返回（用户可关闭自动换行）；
+    * 中文逐字断行，英文按单词断行且保留原有空格，URL / ``@用户`` / ``#话题#`` 不被拆开；
+    * 已有换行（段落）保留，段落内的续行按 *indent* 缩进；
+    * 做基本的「行头禁则」：``，。！？`` 等标点不会被推到下一行行首。
+    """
+    if width <= 0 or not text:
+        return text
+
+    indent_width = display_width(indent)
+    out: list[str] = []
+    for raw_line in text.split("\n"):
+        if display_width(raw_line) <= width:
+            out.append(raw_line)
+            continue
+        prefix = ""
+        limit = width
+        current: list[tuple[str, bool]] = []
+        current_width = 0
+        for atom, spaced in _split_atoms(raw_line):
+            atom_width = display_width(atom)
+            gap = 1 if (spaced and current) else 0
+            if current and current_width + gap + atom_width > limit:
+                moved = current.pop() if len(current) > 1 and atom[:1] in _NO_LINE_START else None
+                out.append(prefix + _join_atoms(current))
+                prefix = indent
+                limit = width - indent_width
+                current = [(moved[0], False)] if moved else []
+                current.append((atom, spaced and moved is None))
+                current_width = sum(display_width(t) + (1 if s else 0) for t, s in current)
+                continue
+            current.append((atom, bool(current) and spaced))
+            current_width += gap + atom_width
+        out.append(prefix + _join_atoms(current))
+    return "\n".join(out)
+
+
+def clean_and_wrap(text: str, width: int = 0, *, indent: str = "") -> str:
+    """清洗（去 emoji / 规整空白）后自动换行。"""
+    return wrap_text(clean_text(text), width, indent=indent)
+
+
+def text_value(value: Any) -> str:
+    """把接口字段安全地转成可读文本。
+
+    B站接口同一字段在不同动态类型下可能是 ``str`` / ``{"text": ...}`` /
+    列表（如 ``rich_text_nodes``），直接 ``str()`` 会把字典原样发到群里，
+    因此这里统一取文本并对结果做清洗。
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return clean_text(value)
+    if isinstance(value, dict):
+        for key in ("text", "content", "title", "desc", "summary", "name"):
+            inner = value.get(key)
+            if isinstance(inner, (str, dict, list)):
+                resolved = text_value(inner)
+                if resolved:
+                    return resolved
+        return ""
+    if isinstance(value, list):
+        parts = [text_value(item) for item in value]
+        return clean_text("\n".join(part for part in parts if part))
+    return clean_text(str(value))
+
+
 # ───────────────────────── 动态数据提取 ─────────────────────────
 
 
@@ -244,7 +437,8 @@ def dynamic_author_name(item: Any) -> str:
     if not name:
         mid = author.get("mid")
         name = f"UID {mid}" if mid else "UP主"
-    return str(name).strip() or "UP主"
+    # UP主昵称本身也可能带 emoji，推送前统一清洗
+    return clean_text(str(name)) or "UP主"
 
 
 def dynamic_author_uid(item: Any) -> str:
@@ -350,22 +544,22 @@ def extract_dynamic_cover(item: dict[str, Any]) -> str:
 
 
 def extract_dynamic_text(item: dict[str, Any]) -> str:
-    """提取动态可读文本（描述 + opus 摘要 + 视频标题/简介），去重保序。"""
+    """提取动态可读文本（描述 + opus 摘要 + 视频标题/简介），去重保序并清洗 emoji。"""
     dynamic = dig(item, "modules", "module_dynamic", default={})
     if not isinstance(dynamic, dict):
         return ""
     parts: list[str] = []
     text = dig(dynamic, "desc", "text")
     if text:
-        parts.append(str(text).strip())
+        parts.append(text_value(text))
     summary = dig(dynamic, "major", "opus", "summary", "text")
     if summary:
-        parts.append(str(summary).strip())
+        parts.append(text_value(summary))
     archive = dynamic_archive(item)
     for key in ("title", "desc"):
         value = archive.get(key)
         if value:
-            parts.append(str(value).strip())
+            parts.append(text_value(value))
     seen: set[str] = set()
     unique: list[str] = []
     for part in parts:
@@ -384,6 +578,138 @@ def extract_forward_text(item: dict[str, Any]) -> str:
     if not text:
         return ""
     return f"@{dynamic_author_name(orig)}: {text}"
+
+
+#: ``major`` 中的卡片类型 → (类型名, URL 字段候选)。
+_CARD_KINDS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "archive": ("视频", ("jump_url", "short_link_v2")),
+    "article": ("专栏", ("jump_url",)),
+    "opus": ("图文", ()),
+    "live_rcmd": ("直播", ("jump_url",)),
+    "live_play_info": ("直播", ("link", "jump_url")),
+    "common": ("卡片", ("jump_url",)),
+    "common_square": ("卡片", ("jump_url",)),
+    "medialist": ("合集", ("jump_url",)),
+    "music": ("音乐", ("jump_url",)),
+    "pgc": ("番剧", ("jump_url",)),
+    "courses": ("课程", ("jump_url",)),
+    "upower_common_square": ("充电", ("jump_url",)),
+    "live": ("直播", ("jump_url",)),
+}
+
+
+def _card_number(*values: Any) -> str:
+    for value in values:
+        if value not in (None, "", "-"):
+            return format_count(value)
+    return ""
+
+
+def dynamic_card(item: dict[str, Any]) -> dict[str, str]:
+    """按 ``major`` 类型提取卡片信息，供各类型专属排版使用。
+
+    返回键固定为 ``kind`` / ``title`` / ``desc`` / ``stat`` / ``url`` / ``room``，
+    取不到的字段为空串，调用方无需做分支判断。
+    """
+    major = dynamic_major(item)
+    card = {"kind": "", "title": "", "desc": "", "stat": "", "url": "", "room": ""}
+    if not major:
+        return card
+
+    for key, (kind, url_keys) in _CARD_KINDS.items():
+        data = major.get(key)
+        if not isinstance(data, dict):
+            continue
+        card["kind"] = kind
+        if key in ("live_rcmd", "live_play_info", "live"):
+            data = _live_payload(data)
+        elif key == "common":
+            # 通用卡片/互动抽奖把真正的内容放在 square / lottery 子对象里
+            for field in ("square", "lottery"):
+                inner = data.get(field)
+                if isinstance(inner, dict):
+                    data = {**data, **inner}
+                    break
+            if dynamic_type(item) == "DYNAMIC_TYPE_LOTTERY":
+                card["kind"] = "抽奖"
+        card["title"] = text_value(data.get("title") or data.get("name"))
+        card["desc"] = text_value(data.get("desc") or data.get("summary"))
+        raw_stat = data.get("stat")
+        stat: dict[str, Any] = raw_stat if isinstance(raw_stat, dict) else {}
+        if key == "archive":
+            card["stat"] = _archive_stat_line(data, stat)
+        elif key == "article":
+            raw_stats = data.get("stats")
+            views = _card_number(
+                (raw_stats if isinstance(raw_stats, dict) else {}).get("view"),
+                data.get("view"),
+            )
+            if views:
+                card["stat"] = f"阅读 {views}"
+        elif key in ("live_rcmd", "live_play_info", "live"):
+            card["stat"] = _live_stat_line(data)
+            card["room"] = str(data.get("room_id") or data.get("roomId") or "").strip()
+        elif key == "medialist":
+            count = _card_number(stat.get("count"), data.get("count"))
+            if count:
+                card["stat"] = f"内容 {count}"
+        for field in url_keys:
+            url = data.get(field)
+            if is_http_url(url):
+                card["url"] = str(url)
+                break
+        if not card["url"]:
+            card["url"] = first_http_url(data, "jump_url", "link", "url", "short_link_v2")
+        break
+    return card
+
+
+def _archive_stat_line(archive: dict[str, Any], stat: dict[str, Any]) -> str:
+    """视频卡片的统计行（播放 / 弹幕 / 时长），字段缺失则省略。"""
+    parts: list[str] = []
+    if stat.get("play") is not None:
+        parts.append(f"播放 {format_count(stat.get('play'))}")
+    if stat.get("danmaku") is not None:
+        parts.append(f"弹幕 {format_count(stat.get('danmaku'))}")
+    duration = archive.get("duration_text") or archive.get("duration")
+    if duration:
+        parts.append(f"时长 {format_duration(duration)}")
+    return " | ".join(parts)
+
+
+def _live_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """展开直播卡片数据：``live_rcmd.content`` 是 JSON 字符串，``live_play_info`` 是嵌套字典。"""
+    merged = data
+    content = data.get("content")
+    if isinstance(content, str) and content.strip().startswith("{"):
+        with suppress(ValueError, TypeError):
+            # 非 dict 的 JSON（理论不会出现）会在解包时抛 TypeError，被 suppress 吞掉
+            merged = {**merged, **json.loads(content)}
+    play = merged.get("live_play_info")
+    if isinstance(play, dict):
+        merged = {**merged, **play}
+    return merged
+
+
+def _live_stat_line(data: dict[str, Any]) -> str:
+    """直播卡片的统计行（人气 / 看过人数）。"""
+    parts: list[str] = []
+    popularity = _card_number(data.get("popularity"), data.get("online"))
+    if popularity:
+        parts.append(f"人气 {popularity}")
+    watched = _card_number(data.get("watched_show"))
+    if watched:
+        parts.append(f"看过 {watched}")
+    return " | ".join(parts)
+
+
+def extract_live_title(live_info: dict[str, Any]) -> str:
+    """直播标题（不同接口字段不一致，取清洗后的首个非空值）。"""
+    for key in ("title", "live_title", "room_name"):
+        cleaned = text_value(live_info.get(key))
+        if cleaned:
+            return cleaned
+    return ""
 
 
 def extract_live_cover(live_info: dict[str, Any]) -> str:
